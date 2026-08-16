@@ -32,6 +32,16 @@ function roomCodeOf(payload: RoomPayload): string {
   return code
 }
 
+describe("health", () => {
+  test("answers the proxy health check without a session", async () => {
+    const client = server.client()
+    const response = await client.fetch("/up")
+
+    expect(response.status).toBe(200)
+    expect(client.cookie).toBeNull()
+  })
+})
+
 describe("sessions", () => {
   test("issues a signed session cookie on the first request", async () => {
     const client = server.client()

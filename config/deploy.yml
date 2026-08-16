@@ -1,0 +1,54 @@
+service: shuffleupandplay
+image: cardmagic/shuffleupandplay
+
+servers:
+  web:
+    hosts:
+      - <%= ENV.fetch("KAMAL_SERVER_HOST") %>
+
+proxy:
+  ssl:
+    certificate_pem: CLOUDFLARE_ORIGIN_CERT
+    private_key_pem: CLOUDFLARE_ORIGIN_KEY
+  host: shuffleupandplay.com
+  app_port: 3000
+  forward_headers: true
+  ssl_redirect: false
+  healthcheck:
+    path: /up
+    interval: 3
+    timeout: 10
+
+registry:
+  server: docker.io
+  username: cardmagic
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  secret:
+    - SHUFFLE_SECRET
+  clear:
+    NODE_ENV: production
+    PORT: 3000
+    SHUFFLE_DATABASE_PATH: /app/storage/solid-objects.sqlite3
+
+volumes:
+  - "shuffleupandplay-storage:/app/storage"
+
+builder:
+  arch: amd64
+  remote: ssh://<%= ENV.fetch("KAMAL_SSH_USER", "app") %>@<%= ENV.fetch("KAMAL_SERVER_HOST") %>
+  local: true
+  cache:
+    type: registry
+
+ssh:
+  user: <%= ENV.fetch("KAMAL_SSH_USER", "app") %>
+
+aliases:
+  logs: app logs -f
+  shell: app exec --interactive --reuse "bash"
+
+deploy_timeout: 120
+drain_timeout: 30

@@ -1,0 +1,16 @@
+.git/
+.github/
+.kamal/
+node_modules/
+dist/
+storage/
+test/
+coverage/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+.DS_Store
+README.md
+MIT-LICENSE
+solid-objects.config.js

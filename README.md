@@ -130,6 +130,32 @@ test/                126 tests
 | `PORT` | `3000` | HTTP port |
 | `NODE_ENV` | none | `production` adds `Secure` to the session cookie |
 
+## Deployment
+
+The app deploys with [Kamal](https://kamal-deploy.org) to a single Docker host.
+Cloudflare terminates public TLS, and kamal-proxy serves a Cloudflare Origin
+certificate to Cloudflare. Set the Cloudflare SSL mode to Full (strict).
+
+```bash
+KAMAL_SERVER_HOST=your-host kamal setup     # first deploy
+KAMAL_SERVER_HOST=your-host kamal deploy    # later deploys
+```
+
+`config/deploy.yml` keeps the host in an environment variable, so no server
+address enters this repository. `.kamal/secrets` reads every credential from
+1Password and holds no raw values.
+
+| Secret | Purpose |
+| --- | --- |
+| `KAMAL_REGISTRY_PASSWORD` | pushes the image to the container registry |
+| `CLOUDFLARE_ORIGIN_CERT` | origin certificate that kamal-proxy serves |
+| `CLOUDFLARE_ORIGIN_KEY` | private key for that certificate |
+| `SHUFFLE_SECRET` | signs the session cookie |
+
+SQLite lives on the `shuffleupandplay-storage` volume at `/app/storage`, so the
+database survives a deploy. `GET /up` answers the proxy health check without a
+session.
+
 ## License
 
 MIT. See [MIT-LICENSE](MIT-LICENSE).
