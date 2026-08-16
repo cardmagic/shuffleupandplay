@@ -62,6 +62,68 @@ describe("asset fingerprints", () => {
   })
 })
 
+describe("counter tokens", () => {
+  async function tableWithBattlefieldCard(client: TestClient) {
+    const code = roomCodeOf(await createRoom(client))
+    await client.fetch(`/api/tables/${code}/deck`, jsonRequest({ deckId: "55" }))
+    await server.harness.runtime.testing.drain()
+    await client.fetch(
+      `/api/tables/${code}/actions`,
+      jsonRequest({ action: { type: "drawCard", count: 1 } }),
+    )
+    const drawn = await client.json<RoomPayload>(`/api/tables/${code}/state`)
+    const instanceId = drawn.space?.players[0]?.hand[0]?.instanceId ?? ""
+    await client.fetch(
+      `/api/tables/${code}/actions`,
+      jsonRequest({ action: { type: "playFromHand", instanceId } }),
+    )
+    return { code, instanceId }
+  }
+
+  test("offers a counter button on each of your own battlefield cards", async () => {
+    const alice = server.client()
+    const { code, instanceId } = await tableWithBattlefieldCard(alice)
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    expect(html).toContain("addCounter")
+    expect(html).toMatch(/aria-label="Add a counter to [^"]+"/)
+    expect(html).toContain(instanceId)
+  })
+
+  test("adds a counter through that button without any dragging", async () => {
+    const alice = server.client()
+    const { code, instanceId } = await tableWithBattlefieldCard(alice)
+
+    await alice.fetch(
+      `/api/tables/${code}/actions`,
+      jsonRequest({ action: { type: "addCounter", instanceId, x: 8, y: 8 } }),
+    )
+
+    const state = await alice.json<RoomPayload>(`/api/tables/${code}/state`)
+    expect(state.space?.players[0]?.battlefield[0]?.counters).toHaveLength(1)
+  })
+
+  test("names every card tool for a screen reader instead of an emoji", async () => {
+    const alice = server.client()
+    const { code } = await tableWithBattlefieldCard(alice)
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    for (const label of ["to hand", "into library", "to graveyard", "to exile"]) {
+      expect(html).toContain(label)
+    }
+
+    const emojiButtons = html.match(/<button[^>]*class="card-tool"[^>]*>/g) ?? []
+    expect(emojiButtons.length).toBeGreaterThan(0)
+    expect(emojiButtons.every((button) => button.includes("aria-label="))).toBe(true)
+  })
+})
+
 describe("waiting for an opponent", () => {
   test("shows the waiting panel while the host sits alone", async () => {
     const alice = server.client()

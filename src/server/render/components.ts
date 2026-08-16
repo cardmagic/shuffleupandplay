@@ -190,7 +190,15 @@ function renderBattlefieldCard(options: {
 }
 
 function renderCardTools(card: PublicBattlefieldCard): string {
+  const name = card.name
+
   return [
+    actionButton({
+      action: { type: "addCounter", instanceId: card.instanceId, x: 8, y: 8, label: "+1/+1" },
+      label: "➕",
+      className: "card-tool",
+      accessibleName: `Add a counter to ${name}`,
+    }),
     actionButton({
       action: {
         type: "moveCardZone",
@@ -200,7 +208,7 @@ function renderCardTools(card: PublicBattlefieldCard): string {
       },
       label: "🖐️",
       className: "card-tool",
-      title: "Move to hand",
+      accessibleName: `Move ${name} to hand`,
     }),
     actionButton({
       action: {
@@ -211,7 +219,7 @@ function renderCardTools(card: PublicBattlefieldCard): string {
       },
       label: "🔀",
       className: "card-tool",
-      title: "Shuffle into library",
+      accessibleName: `Shuffle ${name} into library`,
     }),
     actionButton({
       action: {
@@ -222,7 +230,7 @@ function renderCardTools(card: PublicBattlefieldCard): string {
       },
       label: "🪦",
       className: "card-tool",
-      title: "Move to graveyard",
+      accessibleName: `Move ${name} to graveyard`,
     }),
     actionButton({
       action: {
@@ -233,7 +241,7 @@ function renderCardTools(card: PublicBattlefieldCard): string {
       },
       label: "✨",
       className: "card-tool",
-      title: "Move to exile",
+      accessibleName: `Move ${name} to exile`,
     }),
   ].join("")
 }
@@ -381,17 +389,20 @@ function actionButton(options: {
   label: string
   className?: string
   title?: string
+  accessibleName?: string
   preview?: PublicCard
   libraryCardName?: string
 }): string {
   const className = options.className ? ` class="${attribute(options.className)}"` : ""
-  const title = options.title ? ` title="${attribute(options.title)}"` : ""
+  const describedName = options.accessibleName ?? options.title
+  const title = describedName ? ` title="${attribute(describedName)}"` : ""
+  const label = describedName ? ` aria-label="${attribute(describedName)}"` : ""
   const preview = options.preview ? ` ${previewAttributes(options.preview)}` : ""
   const filter = options.libraryCardName
     ? ` data-library-card-name="${attribute(options.libraryCardName)}"`
     : ""
 
-  return `<button type="button"${className}${title}${preview}${filter} data-game-action="${jsonAttribute(options.action)}">${options.label}</button>`
+  return `<button type="button"${className}${title}${label}${preview}${filter} data-game-action="${jsonAttribute(options.action)}">${options.label}</button>`
 }
 
 function previewAttributes(card: PublicCard): string {

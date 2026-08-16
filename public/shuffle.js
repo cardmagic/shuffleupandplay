@@ -2,6 +2,7 @@ import {
   SolidObjectsBrowserClient,
   SolidObjectsComponentRegistry,
 } from "/vendor/live/browser/index.js"
+import { morph } from "./morph.js"
 
 const game = document.querySelector("[data-game]")
 if (game) start(game)
@@ -122,15 +123,6 @@ function showToast(message) {
   window.setTimeout(() => toast.remove(), 4000)
 }
 
-function morph(target, rendered) {
-  const next = document.createElement("div")
-  next.innerHTML = rendered
-  if (target.innerHTML === next.innerHTML) return
-
-  const activeId = document.activeElement?.id
-  target.innerHTML = next.innerHTML
-  if (activeId) document.getElementById(activeId)?.focus()
-}
 
 function wireActions(game, actorId) {
   document.addEventListener("click", async (event) => {
