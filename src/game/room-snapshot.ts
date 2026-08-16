@@ -6,6 +6,7 @@ import type {
   PublicPlayer,
   Room,
   RoomPayload,
+  SeatFingerprint,
 } from "./types.ts"
 
 export interface RoomPayloadOptions {
@@ -64,6 +65,28 @@ export function playerSummaries(room: Room): PlayerSummary[] {
     exileCount: player.exile.length,
     isSearchingDeck: player.isSearchingDeck,
   }))
+}
+
+export function seatFingerprints(room: Room): SeatFingerprint[] {
+  return playerSummaries(room).map((summary) => {
+    const player = room.players.find((candidate) => candidate.seat === summary.seat)
+    return {
+      ...summary,
+      battlefield: (player?.battlefield ?? []).map((card) => ({
+        instanceId: card.instanceId,
+        tapped: card.tapped,
+        x: card.x,
+        y: card.y,
+        counters: card.counters.map((counter) => ({
+          id: counter.id,
+          label: counter.label,
+          value: counter.value,
+          x: counter.x,
+          y: counter.y,
+        })),
+      })),
+    }
+  })
 }
 
 function publicPlayer(options: { player: Player; sessionId: string | null }): PublicPlayer {

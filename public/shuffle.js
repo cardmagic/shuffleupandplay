@@ -133,6 +133,8 @@ async function sendAction(actorId, action) {
   if (!response.ok) setConnectionState("The last action was refused")
 }
 
+const TAP_SLOP_PIXELS = 10
+
 let drag = null
 
 function beginDrag(event, game) {
@@ -184,7 +186,7 @@ function moveDrag(event) {
   const position = dragPosition(event)
   if (drag.kind === "card") {
     const travelled = Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY)
-    if (!drag.moved && travelled < 3) return
+    if (!drag.moved && travelled < TAP_SLOP_PIXELS) return
     drag.moved = true
   }
   drag.element.style.left = `${position.x}px`

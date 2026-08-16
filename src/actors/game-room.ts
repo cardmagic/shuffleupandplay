@@ -14,8 +14,8 @@ import { applyPlayerAction, buildPlayer } from "../game/player.ts"
 import {
   isPlayerInRoom,
   playerForSession,
-  playerSummaries,
   roomPayload,
+  seatFingerprints,
 } from "../game/room-snapshot.ts"
 import type { Card, Player, PlayerSummary, Room, RoomPayload } from "../game/types.ts"
 
@@ -83,19 +83,15 @@ export class GameRoom extends Actor {
   }
 
   override observables(): Record<string, unknown> {
-    const summaries = this.room ? playerSummaries(this.room) : []
+    const seats = this.room ? seatFingerprints(this.room) : []
 
     return {
       version: broadcastValue(this.room?.version ?? 0),
       lifeTotals: broadcastValue(
-        Object.fromEntries(summaries.map((summary) => [String(summary.seat), summary.life])),
+        Object.fromEntries(seats.map((seat) => [String(seat.seat), seat.life])),
       ),
-      seatOne: broadcastInvalidation(
-        summaries.find((summary) => summary.seat === 1) ?? null,
-      ),
-      seatTwo: broadcastInvalidation(
-        summaries.find((summary) => summary.seat === 2) ?? null,
-      ),
+      seatOne: broadcastInvalidation(seats.find((seat) => seat.seat === 1) ?? null),
+      seatTwo: broadcastInvalidation(seats.find((seat) => seat.seat === 2) ?? null),
     }
   }
 

@@ -32,6 +32,24 @@ function apply(player: Player, action: GameAction): Player {
   return applyPlayerAction({ player, action, randomness: REVERSING_RANDOMNESS })
 }
 
+describe("playFromHand placement", () => {
+  test("gives each card played from hand its own position", () => {
+    const holding: Player = {
+      ...buildPlayer({ name: "Alice", sessionId: "session-1", seat: 1, identifier: "player-1" }),
+      hand: [card("hand-1"), card("hand-2"), card("hand-3")],
+    }
+
+    const table = holding.hand.reduce(
+      (player, held) => apply(player, { type: "playFromHand", instanceId: held.instanceId }),
+      holding,
+    )
+
+    const positions = table.battlefield.map((placed) => `${placed.x},${placed.y}`)
+    expect(table.battlefield).toHaveLength(3)
+    expect(new Set(positions).size).toBe(3)
+  })
+})
+
 describe("applyPlayerAction", () => {
   test("draws a card from the library", () => {
     const updated = apply(playerWithCards(), { type: "drawCard", count: 1 })

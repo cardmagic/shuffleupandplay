@@ -10,6 +10,9 @@ const COUNTER_RANGE = { x: { minimum: 0, maximum: 96 }, y: { minimum: 0, maximum
 const DRAW_RANGE = { minimum: 1, maximum: 12 }
 const MAXIMUM_COUNTER_LABEL_LENGTH = 9
 const PLAY_POSITION = { x: 240, y: 140 }
+const PLAY_STAGGER = 26
+const PLAY_COLUMNS = 6
+const PLAY_ROWS = 4
 const DROP_POSITION = { x: 40, y: 40 }
 
 export interface BuildPlayerOptions {
@@ -118,8 +121,20 @@ function playFromHand(options: { player: Player; instanceId: string }): Player {
   return {
     ...player,
     hand: withoutCard({ cards: player.hand, instanceId }),
-    battlefield: [...player.battlefield, battlefieldCard({ card, ...PLAY_POSITION })],
+    battlefield: [
+      ...player.battlefield,
+      battlefieldCard({ card, ...freePlayPosition(player.battlefield) }),
+    ],
   }
+}
+
+function freePlayPosition(battlefield: BattlefieldCard[]): { x: number; y: number } {
+  for (let slot = 0; slot < PLAY_COLUMNS * PLAY_ROWS; slot += 1) {
+    const x = PLAY_POSITION.x + (slot % PLAY_COLUMNS) * PLAY_STAGGER
+    const y = PLAY_POSITION.y + Math.floor(slot / PLAY_COLUMNS) * PLAY_STAGGER
+    if (!battlefield.some((card) => card.x === x && card.y === y)) return { x, y }
+  }
+  return PLAY_POSITION
 }
 
 function toggleTap(options: { player: Player; instanceId: string }): Player {

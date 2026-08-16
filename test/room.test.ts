@@ -2,8 +2,8 @@ import { describe, expect, test } from "vitest"
 
 import { generateRoomCode, normalizeRoomCode } from "../src/game/room-code.ts"
 import { buildPlayer } from "../src/game/player.ts"
-import { playerSummaries, roomPayload } from "../src/game/room-snapshot.ts"
-import type { Card, Room } from "../src/game/types.ts"
+import { playerSummaries, roomPayload, seatFingerprints } from "../src/game/room-snapshot.ts"
+import type { BattlefieldCard, Card, Room } from "../src/game/types.ts"
 
 function card(instanceId: string): Card {
   return {
@@ -123,6 +123,50 @@ describe("playerSummaries", () => {
         isSearchingDeck: false,
       },
     ])
+  })
+})
+
+describe("seatFingerprints", () => {
+  function battlefieldRoom(overrides: Partial<BattlefieldCard>): Room {
+    const base = room()
+    const played: BattlefieldCard = {
+      ...card("alice-battlefield"),
+      x: 10,
+      y: 20,
+      counters: [],
+      ...overrides,
+    }
+    return {
+      ...base,
+      players: base.players.map((player) =>
+        player.seat === 1 ? { ...player, battlefield: [played] } : player,
+      ),
+    }
+  }
+
+  test("changes when a battlefield card taps", () => {
+    expect(seatFingerprints(battlefieldRoom({ tapped: true }))).not.toEqual(
+      seatFingerprints(battlefieldRoom({})),
+    )
+  })
+
+  test("changes when a battlefield card moves", () => {
+    expect(seatFingerprints(battlefieldRoom({ x: 300 }))).not.toEqual(
+      seatFingerprints(battlefieldRoom({})),
+    )
+  })
+
+  test("changes when a counter moves on a card", () => {
+    const counter = { id: "counter-1", label: "+1/+1", value: 1, x: 4, y: 6 }
+    expect(
+      seatFingerprints(battlefieldRoom({ counters: [{ ...counter, x: 40 }] })),
+    ).not.toEqual(seatFingerprints(battlefieldRoom({ counters: [counter] })))
+  })
+
+  test("keeps card identity out of the fingerprint", () => {
+    const fingerprints = JSON.stringify(seatFingerprints(battlefieldRoom({})))
+    expect(fingerprints).not.toContain("Card alice-battlefield")
+    expect(fingerprints).not.toContain("scryfall-alice-battlefield")
   })
 })
 

@@ -112,3 +112,15 @@ export type PlayerSummary = {
   exileCount: number
   isSearchingDeck: boolean
 }
+
+export type CardFingerprint = {
+  instanceId: string
+  tapped: boolean
+  x: number
+  y: number
+  counters: CardCounter[]
+}
+
+export type SeatFingerprint = PlayerSummary & {
+  battlefield: CardFingerprint[]
+}
