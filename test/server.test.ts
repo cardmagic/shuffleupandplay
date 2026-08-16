@@ -40,6 +40,14 @@ describe("health", () => {
     expect(response.status).toBe(200)
     expect(client.cookie).toBeNull()
   })
+
+  test("answers a HEAD health check without a session", async () => {
+    const client = server.client()
+    const response = await client.fetch("/up", { method: "HEAD" })
+
+    expect(response.status).toBe(200)
+    expect(client.cookie).toBeNull()
+  })
 })
 
 describe("sessions", () => {

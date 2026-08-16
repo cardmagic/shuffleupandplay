@@ -99,7 +99,8 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     : undefined
 
   const server = createServer((request, response) => {
-    if (request.method === "GET" && (request.url ?? "").split("?")[0] === "/up") {
+    const healthMethod = request.method === "GET" || request.method === "HEAD"
+    if (healthMethod && (request.url ?? "").split("?")[0] === "/up") {
       response.writeHead(200, { "content-type": "text/plain; charset=utf-8" })
       response.end("OK")
       return
