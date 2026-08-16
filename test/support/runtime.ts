@@ -12,20 +12,24 @@ export type TestRuntime = {
   runtime: SolidObjectsRuntime
   instrumentation: string[]
   deckRequests: string[]
+  databasePath: string
+  restart(options?: TestRuntimeOptions): Promise<TestRuntime>
   close(): Promise<void>
 }
 
 export type TestRuntimeOptions = {
   deck?: (deckId: string) => Promise<ArchidektDeck>
+  directory?: string
 }
 
 export async function startTestRuntime(options: TestRuntimeOptions = {}): Promise<TestRuntime> {
-  const directory = mkdtempSync(join(tmpdir(), "shuffleupandplay-"))
+  const directory = options.directory ?? mkdtempSync(join(tmpdir(), "shuffleupandplay-"))
+  const databasePath = join(directory, "solid-objects.sqlite3")
   const instrumentation: string[] = []
   const deckRequests: string[] = []
 
   const application = createShuffleApplication({
-    databasePath: join(directory, "solid-objects.sqlite3"),
+    databasePath,
     pollingIntervalMilliseconds: 10,
     instrumentation: (event) => instrumentation.push(event.name),
     archidekt: {
@@ -45,6 +49,11 @@ export async function startTestRuntime(options: TestRuntimeOptions = {}): Promis
     runtime: application.runtime,
     instrumentation,
     deckRequests,
+    databasePath,
+    restart: async (next: TestRuntimeOptions = {}) => {
+      await application.close()
+      return startTestRuntime({ ...options, ...next, directory })
+    },
     close: async () => {
       await application.close()
       rmSync(directory, { recursive: true, force: true })

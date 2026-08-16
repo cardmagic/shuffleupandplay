@@ -9,7 +9,10 @@ const TRUSTED_HOST = "archidekt.com"
 const MAXIMUM_SEARCH_PAGES = 4
 const MAXIMUM_SEARCH_RESULTS = 120
 const MAXIMUM_CARD_QUANTITY = 20
+const MAXIMUM_DECK_CARDS = 500
 const REQUEST_TIMEOUT_MILLISECONDS = 15_000
+const SEARCH_CACHE_MILLISECONDS = 60_000
+const MAXIMUM_CACHED_SEARCHES = 200
 
 export class ArchidektError extends Error {
   override readonly name = "ArchidektError"
@@ -45,10 +48,42 @@ export interface ArchidektClient {
 }
 
 export function createArchidektClient(): ArchidektClient {
+  const cache = new Map<string, { expiresAt: number; results: DeckSearchResult[] }>()
+  const inFlight = new Map<string, Promise<DeckSearchResult[]>>()
+
   return {
-    search: (query) => search(query),
+    search: (query) => cachedSearch({ query, cache, inFlight }),
     deck: (deckId) => deck(deckId),
   }
+}
+
+async function cachedSearch(options: {
+  query: string
+  cache: Map<string, { expiresAt: number; results: DeckSearchResult[] }>
+  inFlight: Map<string, Promise<DeckSearchResult[]>>
+}): Promise<DeckSearchResult[]> {
+  const key = options.query.trim().toLowerCase()
+  if (key.length < 2) return []
+
+  const cached = options.cache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.results
+
+  const pending = options.inFlight.get(key)
+  if (pending) return pending
+
+  const request = search(key)
+    .then((results) => {
+      if (options.cache.size >= MAXIMUM_CACHED_SEARCHES) {
+        const oldest = options.cache.keys().next().value
+        if (oldest !== undefined) options.cache.delete(oldest)
+      }
+      options.cache.set(key, { expiresAt: Date.now() + SEARCH_CACHE_MILLISECONDS, results })
+      return results
+    })
+    .finally(() => options.inFlight.delete(key))
+
+  options.inFlight.set(key, request)
+  return request
 }
 
 async function search(query: string): Promise<DeckSearchResult[]> {
@@ -146,10 +181,17 @@ function colorBands(colors: unknown): DeckColorBand[] {
 
 function deckCards(payload: Record<string, unknown>): Card[] {
   const inclusion = categoryInclusion(payload.categories)
-  return recordArray(payload.cards).flatMap((card) => {
-    if (!includeCard({ card, inclusion })) return []
-    return expandCard(card)
-  })
+  const cards: Card[] = []
+
+  for (const card of recordArray(payload.cards)) {
+    if (!includeCard({ card, inclusion })) continue
+    for (const copy of expandCard(card)) {
+      if (cards.length >= MAXIMUM_DECK_CARDS) return cards
+      cards.push(copy)
+    }
+  }
+
+  return cards
 }
 
 function categoryInclusion(categories: unknown): Map<string, boolean> {

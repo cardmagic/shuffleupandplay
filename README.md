@@ -19,6 +19,15 @@ The app runs on Node 24, TypeScript, SQLite, `node:http`, and `ws`. It adds no
 web framework, no bundler, and no client build step. Card art comes from
 Scryfall. Deck import reads the public Archidekt API.
 
+### What the deployment proves
+
+This deployment demonstrates durable actors and realtime synchronization in one
+Node process backed by SQLite. Multi-process and PostgreSQL behaviour are tested
+in the Solid Objects repository, not here. The restart suite in
+`test/restart.test.ts` closes the runtime, reopens the same database, and proves
+that committed state, an accepted asynchronous action, an unfinished effect, and
+a scheduled reminder all survive.
+
 Contributors should start with [AGENTS.md](AGENTS.md), which covers the
 architecture, the state model, and the traps worth knowing.
 
@@ -43,7 +52,7 @@ application policy authorizes loopback requests only.
 ## Verification
 
 ```bash
-pnpm test        # 144 tests
+pnpm test        # 171 tests
 pnpm typecheck
 pnpm build
 pnpm doctor
@@ -69,7 +78,7 @@ neutral context.
 | `solid-objects/browser` | `public/shuffle.js`, served straight from `node_modules` |
 | `solid-objects/web` | opt-in authorized or public read-only dashboard |
 | Component registry | batched, per-seat HTML refresh through `/api/components/refresh` |
-| State migrations | `stateVersion: 3` removes obsolete manual revision counters |
+| State migrations | `stateVersion: 5`, with a legacy room upgraded in the test suite |
 | Doctor, processes, retention, reconciliation | `src/doctor.ts` and `test/operations.test.ts` |
 | `testing.drain()` / `testing.reset()` | every runtime test |
 
@@ -102,7 +111,7 @@ src/
   runtime.ts         configure the runtime, effects, commit actions, policies
   main.ts            entry point
 public/              browser client and stylesheet
-test/                144 tests
+test/                171 tests
 ```
 
 ## Environment

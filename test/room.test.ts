@@ -22,6 +22,7 @@ function room(): Room {
     code: "ABC123",
     name: "Kitchen Table",
     version: 4,
+    idleSweepAt: null,
     createdAt: "2026-08-13T00:00:00.000Z",
     updatedAt: "2026-08-13T00:00:00.000Z",
     players: [

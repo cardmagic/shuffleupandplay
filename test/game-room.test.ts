@@ -343,12 +343,46 @@ describe("GameRoom reminders", () => {
     })
     expect(reminders.items.map((reminder) => reminder.operation)).toEqual(["sweepIdleState"])
 
-    await reference.with({ authorizationContext: viewer("session-1", "ABC135") }).sweepIdleState()
+    const armedAt = (
+      await reference.snapshot({ authorizationContext: viewer("session-1", "ABC135") })
+    ).room?.idleSweepAt
+
+    await reference
+      .with({ authorizationContext: viewer("session-1", "ABC135") })
+      .sweepIdleState({ armedAt: armedAt ?? 0 })
 
     const snapshot = await reference.snapshot({
       authorizationContext: viewer("session-1", "ABC135"),
     })
     expect(snapshot.room?.players[0]?.isSearchingDeck).toBe(false)
+  })
+
+  test("ignores a sweep that a later action superseded", async () => {
+    const reference = await createdRoom({ code: "ABC142", sessionId: "session-1" })
+    const context = { authorizationContext: viewer("session-1", "ABC142") }
+
+    await reference.with(context).applyAction({
+      action: { type: "openDeckSearch" },
+      sessionId: "session-1",
+    })
+    const firstArming = (await reference.snapshot(context)).room?.idleSweepAt ?? 0
+
+    await reference.with(context).applyAction({
+      action: { type: "adjustLife", delta: -1 },
+      sessionId: "session-1",
+    })
+    const secondArming = (await reference.snapshot(context)).room?.idleSweepAt ?? 0
+    expect(secondArming).not.toBe(firstArming)
+
+    await reference.with(context).sweepIdleState({ armedAt: firstArming })
+
+    const afterStaleSweep = await reference.snapshot(context)
+    expect(afterStaleSweep.room?.players[0]?.isSearchingDeck).toBe(true)
+
+    await reference.with(context).sweepIdleState({ armedAt: secondArming })
+
+    const afterCurrentSweep = await reference.snapshot(context)
+    expect(afterCurrentSweep.room?.players[0]?.isSearchingDeck).toBe(false)
   })
 })
 

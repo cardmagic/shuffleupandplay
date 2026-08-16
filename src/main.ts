@@ -5,6 +5,7 @@ import type { DashboardAccess } from "solid-objects/web"
 import { GameRoom } from "./actors/game-room.ts"
 import { createShuffleApplication } from "./runtime.ts"
 import { createShuffleServer } from "./server/app.ts"
+import { createShutdown } from "./server/shutdown.ts"
 
 const databasePath = resolve(
   process.env.SHUFFLE_DATABASE_PATH ?? "storage/solid-objects.sqlite3",
@@ -47,15 +48,12 @@ console.log(`Shuffle Up and Play listening on http://localhost:${port}`)
 console.log(`Actor type: ${GameRoom.actorType}`)
 
 const shutdown = new AbortController()
-let shuttingDown = false
 
-async function stop(): Promise<void> {
-  if (shuttingDown) return
-  shuttingDown = true
+const stop = createShutdown(async () => {
   shutdown.abort()
   await server.close()
   await application.close()
-}
+})
 
 process.once("SIGTERM", () => void stop())
 process.once("SIGINT", () => void stop())

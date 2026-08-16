@@ -44,7 +44,7 @@ type DeckEffectArguments = {
 
 export class GameRoom extends Actor {
   static override readonly actorType = "GameRoom"
-  static override readonly stateVersion = 4
+  static override readonly stateVersion = 5
   static override readonly migrations = [
     {
       from: 1,
@@ -76,6 +76,16 @@ export class GameRoom extends Actor {
             ),
           },
         }
+      },
+    },
+    {
+      from: 4,
+      to: 5,
+      migrate: (state: JsonObject): JsonObject => {
+        const room = state.room
+        if (!isRecord(room)) return state
+
+        return { ...state, room: { idleSweepAt: null, ...room } }
       },
     },
   ]
@@ -145,6 +155,7 @@ export class GameRoom extends Actor {
         maximumLength: MAXIMUM_ROOM_NAME_LENGTH,
       }),
       version: 1,
+      idleSweepAt: null,
       players: [creator],
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -262,15 +273,17 @@ export class GameRoom extends Actor {
     return "applied"
   }
 
-  sweepIdleState(): "swept" | "unchanged" {
+  sweepIdleState(options: { armedAt: number }): "swept" | "unchanged" {
     const room = this.room
     if (!room) return "unchanged"
 
+    if (room.idleSweepAt !== options.armedAt) return "unchanged"
     if (!room.players.some((player) => player.isSearchingDeck)) return "unchanged"
 
     this.#commit({
       room: {
         ...room,
+        idleSweepAt: null,
         players: room.players.map((player) => ({ ...player, isSearchingDeck: false })),
       },
     })
@@ -284,9 +297,16 @@ export class GameRoom extends Actor {
 
   #armIdleSweep(): void {
     const room = this.room
-    if (!room?.players.some((player) => player.isSearchingDeck)) return
+    if (!room) return
 
-    this.schedule({ at: new Date(Date.now() + IDLE_SWEEP_DELAY_MILLISECONDS) }).sweepIdleState?.()
+    if (!room.players.some((player) => player.isSearchingDeck)) {
+      if (room.idleSweepAt !== null) this.room = { ...room, idleSweepAt: null }
+      return
+    }
+
+    const armedAt = Date.now() + IDLE_SWEEP_DELAY_MILLISECONDS
+    this.room = { ...room, idleSweepAt: armedAt }
+    this.schedule({ at: new Date(armedAt) }).sweepIdleState?.({ armedAt })
   }
 
   #requireRoom(): Room {

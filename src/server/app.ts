@@ -19,6 +19,7 @@ import type { RoomPayload } from "../game/types.ts"
 import type { ShuffleApplication } from "../runtime.ts"
 import {
   isRecord,
+  PayloadTooLargeError,
   readBody,
   sendEmpty,
   sendHtml,
@@ -26,6 +27,7 @@ import {
   sendRedirect,
   type RequestContext,
 } from "./http.ts"
+import { createRateLimiter, type RateLimiter } from "./rate-limit.ts"
 import { attachRealtime } from "./realtime.ts"
 import {
   componentTargetId,
@@ -97,6 +99,12 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
   const { application, secret } = options
   const runtime = application.runtime
   const secureCookies = options.secureCookies ?? false
+  const limits: RequestLimits = {
+    createTable: createRateLimiter({ limit: 10, windowMilliseconds: 60_000 }),
+    joinTable: createRateLimiter({ limit: 20, windowMilliseconds: 60_000 }),
+    loadDeck: createRateLimiter({ limit: 20, windowMilliseconds: 60_000 }),
+    searchDecks: createRateLimiter({ limit: 30, windowMilliseconds: 60_000 }),
+  }
   const requestSessions = new WeakMap<IncomingMessage, RequestSession>()
   const dashboardSessions = new Map<string, Map<string, string>>()
   const dashboardHandler = options.operatorDashboard
@@ -143,7 +151,7 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
           respondToUnhandledError({ response, error })
           return
         }
-        handle({ request, response, application, runtime, requestSession }).catch((handleError) => {
+        handle({ request, response, application, runtime, requestSession, limits }).catch((handleError) => {
           respondToUnhandledError({ response, error: handleError })
         })
       }
@@ -180,8 +188,9 @@ async function handle(options: {
   application: ShuffleApplication
   runtime: SolidObjectsRuntime
   requestSession: RequestSession
+  limits: RequestLimits
 }): Promise<void> {
-  const { request, response, application, runtime, requestSession } = options
+  const { request, response, application, runtime, requestSession, limits } = options
   const url = new URL(request.url ?? "/", requestOrigin(request))
 
   const context: RequestContext = {
@@ -194,7 +203,7 @@ async function handle(options: {
   }
 
   try {
-    await route({ context, application, runtime })
+    await route({ context, application, runtime, limits })
   } catch (error) {
     respondToError({ context, error })
   }
@@ -204,8 +213,9 @@ async function route(options: {
   context: RequestContext
   application: ShuffleApplication
   runtime: SolidObjectsRuntime
+  limits: RequestLimits
 }): Promise<void> {
-  const { context, application, runtime } = options
+  const { context, application, runtime, limits } = options
   const path = context.url.pathname
   const method = context.method
 
@@ -223,12 +233,15 @@ async function route(options: {
     return showGame({ context, runtime, roomCode: path.slice("/tables/".length) })
   }
   if (method === "POST" && (path === "/api/tables" || path === "/api/spaces")) {
+    if (!allows({ context, limiter: limits.createTable })) return sendTooManyRequests(context)
     return createSpace({ context, runtime })
   }
   if (method === "POST" && (path === "/api/tables/join" || path === "/api/spaces/join")) {
+    if (!allows({ context, limiter: limits.joinTable })) return sendTooManyRequests(context)
     return joinByCode({ context, runtime })
   }
   if (method === "GET" && path === "/api/archidekt/search") {
+    if (!allows({ context, limiter: limits.searchDecks })) return sendTooManyRequests(context)
     return searchDecks({ context, application })
   }
   if (method === "POST" && path === "/api/components/refresh") {
@@ -242,7 +255,10 @@ async function route(options: {
     const segment = spaceMatch[2]
     if (method === "POST" && segment === "join") return joinSpace({ context, runtime, roomCode })
     if (method === "GET" && segment === "state") return showState({ context, runtime, roomCode })
-    if (method === "POST" && segment === "deck") return loadDeck({ context, runtime, roomCode })
+    if (method === "POST" && segment === "deck") {
+      if (!allows({ context, limiter: limits.loadDeck })) return sendTooManyRequests(context)
+      return loadDeck({ context, runtime, roomCode })
+    }
     if (method === "POST" && segment === "actions") {
       return applyAction({ context, runtime, roomCode })
     }
@@ -251,6 +267,32 @@ async function route(options: {
   if (prefersHtml(context)) return sendHtml({ context, status: 404, body: notFoundPage() })
 
   sendJson({ context, status: 404, body: { error: "Not found" } })
+}
+
+type RequestLimits = {
+  createTable: RateLimiter
+  joinTable: RateLimiter
+  loadDeck: RateLimiter
+  searchDecks: RateLimiter
+}
+
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/
+
+function idempotency(context: RequestContext): { idempotencyKey?: string } {
+  const supplied = context.request.headers["idempotency-key"]
+  const key = Array.isArray(supplied) ? supplied[0] : supplied
+  if (!key || !IDEMPOTENCY_KEY_PATTERN.test(key)) return {}
+
+  return { idempotencyKey: `${context.sessionId}:${key}` }
+}
+
+function allows(options: { context: RequestContext; limiter: RateLimiter }): boolean {
+  return options.limiter.allows({ key: options.context.sessionId })
+}
+
+function sendTooManyRequests(context: RequestContext): void {
+  context.response.setHeader("retry-after", "60")
+  sendJson({ context, status: 429, body: { error: "Too many requests. Wait a moment." } })
 }
 
 function requestOrigin(request: IncomingMessage): string {
@@ -504,15 +546,17 @@ async function applyAction(options: {
   const body = await readBody(context.request)
   const action = asJsonObject(isRecord(body.action) ? body.action : body)
 
-  const reference = runtime
-    .ref(GameRoom, roomCode)
-    .with({ authorizationContext: viewerFor(options) })
+  const callContext = {
+    authorizationContext: viewerFor(options),
+    ...idempotency(context),
+  }
+  const reference = runtime.ref(GameRoom, roomCode).with(callContext)
 
   if (context.request.headers.prefer === "respond-async") {
-    await runtime
-      .ref(GameRoom, roomCode)
-      .send.with({ authorizationContext: viewerFor(options) })
-      .applyAction({ action, sessionId: context.sessionId })
+    await runtime.ref(GameRoom, roomCode).send.with(callContext).applyAction({
+      action,
+      sessionId: context.sessionId,
+    })
     return sendEmpty({ context, status: 202 })
   }
 
@@ -640,10 +684,16 @@ function respondToError(options: { context: RequestContext; error: unknown }): v
     return sendJson({ context, status: 403, body: { error: "This request is not authorized" } })
   }
 
+  if (error instanceof PayloadTooLargeError) {
+    return sendJson({ context, status: 413, body: { error: "That request was too large" } })
+  }
+
   sendJson({ context, status: 500, body: { error: describeError(error) } })
 }
 
 function describeError(error: unknown): string {
+  if (process.env.NODE_ENV === "production") return "Something went wrong. Try again."
+
   return error instanceof Error ? error.message : "Unexpected server error"
 }
 

@@ -62,6 +62,71 @@ describe("asset fingerprints", () => {
   })
 })
 
+describe("idempotency over HTTP", () => {
+  test("applies a retried action with the same key only once", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+    const request = () =>
+      alice.fetch(`/api/tables/${code}/actions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "gesture-1",
+        },
+        body: JSON.stringify({ action: { type: "adjustLife", delta: -5 } }),
+      })
+
+    await request()
+    await request()
+
+    const state = await alice.json<RoomPayload>(`/api/tables/${code}/state`)
+    expect(state.space?.players[0]?.life).toBe(15)
+  })
+
+  test("applies two gestures that carry different keys", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+    const request = (key: string) =>
+      alice.fetch(`/api/tables/${code}/actions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": key },
+        body: JSON.stringify({ action: { type: "adjustLife", delta: -5 } }),
+      })
+
+    await request("gesture-1")
+    await request("gesture-2")
+
+    const state = await alice.json<RoomPayload>(`/api/tables/${code}/state`)
+    expect(state.space?.players[0]?.life).toBe(10)
+  })
+})
+
+describe("request limits", () => {
+  test("refuses a burst of table creations from one session", async () => {
+    const alice = server.client()
+    const statuses: number[] = []
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      const response = await alice.fetch(
+        "/api/tables",
+        jsonRequest({ playerName: "Alice", tableName: "Kitchen Table" }),
+      )
+      statuses.push(response.status)
+    }
+
+    expect(statuses).toContain(429)
+  })
+
+  test("refuses a body larger than the small request cap", async () => {
+    const alice = server.client()
+    const response = await alice.fetch(
+      "/api/tables",
+      jsonRequest({ playerName: "Alice", tableName: "x".repeat(64 * 1024) }),
+    )
+
+    expect(response.status).toBe(413)
+  })
+})
+
 describe("invite links", () => {
   test("honours the forwarded protocol so the invite link stays https", async () => {
     const alice = server.client()
@@ -399,7 +464,7 @@ describe("actions over HTTP", () => {
     expect(response.status).toBe(403)
   })
 
-  test("records a metric row for every applied action", async () => {
+  test("counts applied actions per type instead of storing one row each", async () => {
     const alice = server.client()
     const code = roomCodeOf(await createRoom(alice))
     await alice.fetch(`/api/spaces/${code}/actions`, jsonRequest({ action: { type: "untapAll" } }))
@@ -410,9 +475,27 @@ describe("actions over HTTP", () => {
 
     const metrics = await server.harness.application.actionMetrics()
 
-    expect(metrics.map((metric) => metric.actionType)).toEqual(["untapAll", "adjustLife"])
+    expect(metrics.map((metric) => metric.actionType).sort()).toEqual(["adjustLife", "untapAll"])
     expect(metrics.every((metric) => metric.roomCode === code)).toBe(true)
     expect(metrics.every((metric) => metric.seat === 1)).toBe(true)
+    expect(metrics.every((metric) => metric.actionCount === 1)).toBe(true)
+  })
+
+  test("keeps repeated actions in one bucket rather than growing without bound", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await alice.fetch(
+        `/api/spaces/${code}/actions`,
+        jsonRequest({ action: { type: "untapAll" } }),
+      )
+    }
+
+    const metrics = await server.harness.application.actionMetrics()
+
+    expect(metrics).toHaveLength(1)
+    expect(metrics[0]?.actionType).toBe("untapAll")
+    expect(metrics[0]?.actionCount).toBe(12)
   })
 })
 

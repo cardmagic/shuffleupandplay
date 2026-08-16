@@ -11,7 +11,11 @@ import { GameRoom, type DeckResult, type GameViewer } from "./actors/game-room.t
 import { createArchidektClient, type ArchidektClient } from "./archidekt/client.ts"
 import { isPlayerInRoom } from "./game/room-snapshot.ts"
 
-const ACTION_METRICS_TABLE = "game_action_metrics"
+const ACTION_METRICS_TABLE = "game_action_counts"
+const LEGACY_ACTION_METRICS_TABLE = "game_action_metrics"
+const METRICS_BUCKET_MILLISECONDS = 60 * 60 * 1_000
+const MESSAGE_RETENTION_MILLISECONDS = 24 * 60 * 60 * 1_000
+const INSTANCE_RETENTION_MILLISECONDS = 7 * 24 * 60 * 60 * 1_000
 
 export type ShuffleRuntimeOptions = {
   databasePath: string
@@ -26,6 +30,7 @@ export type ShuffleApplication = {
   archidekt: ArchidektClient
   install(): Promise<void>
   actionMetrics(): Promise<ActionMetric[]>
+  pruneActionMetrics(options: { olderThanMilliseconds: number }): Promise<void>
   close(): Promise<void>
 }
 
@@ -33,7 +38,8 @@ export type ActionMetric = {
   roomCode: string
   actionType: string
   seat: number
-  recordedAtMilliseconds: number
+  bucketStartMilliseconds: number
+  actionCount: number
 }
 
 export function createShuffleApplication(options: ShuffleRuntimeOptions): ShuffleApplication {
@@ -47,8 +53,14 @@ export function createShuffleApplication(options: ShuffleRuntimeOptions): Shuffl
     effectWorkerCount: 1,
     broadcastWorkerCount: 1,
     reminderSchedulerCount: 1,
-    messageRetentionByActorType: { [GameRoom.actorType]: 24 * 60 * 60 * 1_000 },
-    instanceRetentionByActorType: { [GameRoom.actorType]: 7 * 24 * 60 * 60 * 1_000 },
+    messageRetentionByActorType: {
+      [GameRoom.actorType]: MESSAGE_RETENTION_MILLISECONDS,
+      [MatchLog.actorType]: MESSAGE_RETENTION_MILLISECONDS,
+    },
+    instanceRetentionByActorType: {
+      [GameRoom.actorType]: INSTANCE_RETENTION_MILLISECONDS,
+      [MatchLog.actorType]: INSTANCE_RETENTION_MILLISECONDS,
+    },
     ...(options.instrumentation ? { instrumentation: options.instrumentation } : {}),
     authorizeMessage: ({ actorType, actorId, authorizationContext }) =>
       authorizesActor({ actorType, actorId, authorizationContext }),
@@ -82,14 +94,20 @@ export function createShuffleApplication(options: ShuffleRuntimeOptions): Shuffl
   })
 
   runtime.registerCommitAction("recordActionMetric", async (argumentsValue, context) => {
+    const now = await context.connection.nowMilliseconds()
+    const bucketStart = Math.floor(now / METRICS_BUCKET_MILLISECONDS) * METRICS_BUCKET_MILLISECONDS
+
     await context.connection.run(
-      `INSERT INTO ${ACTION_METRICS_TABLE} (room_code, action_type, seat, recorded_at_ms)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO ${ACTION_METRICS_TABLE}
+         (room_code, action_type, seat, bucket_start_ms, action_count)
+       VALUES (?, ?, ?, ?, 1)
+       ON CONFLICT (room_code, action_type, seat, bucket_start_ms)
+       DO UPDATE SET action_count = action_count + 1`,
       [
         String(argumentsValue.roomCode),
         String(argumentsValue.actionType),
         Number(argumentsValue.seat),
-        await context.connection.nowMilliseconds(),
+        bucketStart,
       ],
     )
   })
@@ -100,12 +118,14 @@ export function createShuffleApplication(options: ShuffleRuntimeOptions): Shuffl
     install: async () => {
       await runtime.install()
       await database.connection(async (connection) => {
+        await connection.run(`DROP TABLE IF EXISTS ${LEGACY_ACTION_METRICS_TABLE}`)
         await connection.run(`CREATE TABLE IF NOT EXISTS ${ACTION_METRICS_TABLE} (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
           room_code TEXT NOT NULL,
           action_type TEXT NOT NULL,
           seat INTEGER NOT NULL,
-          recorded_at_ms INTEGER NOT NULL
+          bucket_start_ms INTEGER NOT NULL,
+          action_count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (room_code, action_type, seat, bucket_start_ms)
         )`)
       })
     },
@@ -115,15 +135,24 @@ export function createShuffleApplication(options: ShuffleRuntimeOptions): Shuffl
           room_code: string
           action_type: string
           seat: bigint
-          recorded_at_ms: bigint
-        }>(`SELECT room_code, action_type, seat, recorded_at_ms
-            FROM ${ACTION_METRICS_TABLE} ORDER BY id`)
+          bucket_start_ms: bigint
+          action_count: bigint
+        }>(`SELECT room_code, action_type, seat, bucket_start_ms, action_count
+            FROM ${ACTION_METRICS_TABLE} ORDER BY bucket_start_ms, action_type`)
         return rows.map((row) => ({
           roomCode: row.room_code,
           actionType: row.action_type,
           seat: Number(row.seat),
-          recordedAtMilliseconds: Number(row.recorded_at_ms),
+          bucketStartMilliseconds: Number(row.bucket_start_ms),
+          actionCount: Number(row.action_count),
         }))
+      }),
+    pruneActionMetrics: async (options: { olderThanMilliseconds: number }) =>
+      database.connection(async (connection) => {
+        const now = await connection.nowMilliseconds()
+        await connection.run(`DELETE FROM ${ACTION_METRICS_TABLE} WHERE bucket_start_ms < ?`, [
+          now - options.olderThanMilliseconds,
+        ])
       }),
     close: async () => {
       await runtime.close()

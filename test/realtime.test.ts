@@ -264,3 +264,124 @@ describe("realtime subscriptions", () => {
     expect(subscriber.envelopes).toEqual([])
   })
 })
+
+describe("reconnect recovery", () => {
+  test("gives a reconnected player the latest state once and no opponent cards", async () => {
+    const alice = server.client()
+    const bob = server.client()
+    const code = (await createRoom(alice)).space?.code ?? ""
+    await bob.fetch(`/api/tables/${code}/join`, jsonRequest({ playerName: "Bob" }))
+
+    await alice.fetch(`/api/tables/${code}/deck`, jsonRequest({ deckId: "55" }))
+    await server.harness.runtime.testing.drain()
+    await alice.fetch(
+      `/api/tables/${code}/actions`,
+      jsonRequest({ action: { type: "drawCard", count: 2 } }),
+    )
+
+    const firstSession = await subscribe({ client: bob, roomCode: code, payloads: ["game"] })
+    await firstSession.waitFor((entry) => entry.kind === "payload")
+    firstSession.close()
+    await firstSession.closed
+
+    for (const delta of [-1, -2, -3]) {
+      await alice.fetch(
+        `/api/tables/${code}/actions`,
+        jsonRequest({ action: { type: "adjustLife", delta } }),
+      )
+    }
+
+    const secondSession = await subscribe({ client: bob, roomCode: code, payloads: ["game"] })
+    const replay = await secondSession.waitFor((entry) => entry.kind === "payload")
+
+    const seatOne = replay.payload?.space?.players.find((player) => player.seat === 1)
+    expect(seatOne?.life).toBe(14)
+    expect(seatOne?.hand).toHaveLength(2)
+    expect(JSON.stringify(replay)).not.toContain("Grizzly Bears")
+    expect(JSON.stringify(replay)).toContain("Hidden card")
+
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(secondSession.envelopes.filter((entry) => entry.kind === "payload")).toHaveLength(1)
+    secondSession.close()
+  })
+})
+
+describe("realtime hardening", () => {
+  function socketUrl(roomCode: string): URL {
+    const url = new URL(server.origin)
+    url.protocol = "ws:"
+    url.pathname = "/live"
+    url.searchParams.set("roomCode", roomCode)
+    return url
+  }
+
+  test("refuses a connection from a foreign origin", async () => {
+    const alice = server.client()
+    const code = (await createRoom(alice)).space?.code ?? ""
+
+    const socket = new WebSocket(socketUrl(code), {
+      headers: { cookie: alice.cookie ?? "", origin: "https://attacker.example" },
+    })
+    const envelopes: string[] = []
+    socket.on("message", (data) => envelopes.push(String(data)))
+
+    const closeCode = await new Promise<number>((resolve) => {
+      socket.once("close", resolve)
+      socket.once("error", () => resolve(1008))
+    })
+
+    expect(closeCode).toBe(1008)
+    expect(envelopes).toEqual([])
+  })
+
+  test("accepts a connection from its own origin", async () => {
+    const alice = server.client()
+    const code = (await createRoom(alice)).space?.code ?? ""
+
+    const socket = new WebSocket(socketUrl(code), {
+      headers: { cookie: alice.cookie ?? "", origin: server.origin },
+    })
+    const outcome = await new Promise<string>((resolve, reject) => {
+      socket.once("open", () => resolve("open"))
+      socket.once("close", () => resolve("closed"))
+      socket.once("error", reject)
+    })
+    socket.close()
+
+    expect(outcome).toBe("open")
+  })
+
+  test("drops a socket that sends an oversized frame", async () => {
+    const alice = server.client()
+    const code = (await createRoom(alice)).space?.code ?? ""
+
+    const socket = new WebSocket(socketUrl(code), { headers: { cookie: alice.cookie ?? "" } })
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve())
+      socket.once("error", reject)
+    })
+
+    socket.send(JSON.stringify({ action: "subscribe", padding: "x".repeat(64 * 1024) }))
+    const closeCode = await new Promise<number>((resolve) => socket.once("close", resolve))
+
+    expect(closeCode).toBe(1009)
+  })
+
+  test("drops a socket that floods messages", async () => {
+    const alice = server.client()
+    const code = (await createRoom(alice)).space?.code ?? ""
+
+    const socket = new WebSocket(socketUrl(code), { headers: { cookie: alice.cookie ?? "" } })
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve())
+      socket.once("error", reject)
+    })
+
+    const closed = new Promise<number>((resolve) => socket.once("close", resolve))
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      socket.send(JSON.stringify({ version: 1, action: "subscribe", actorType: "GameRoom", actorId: code }))
+    }
+
+    expect(await closed).toBe(1008)
+  })
+})

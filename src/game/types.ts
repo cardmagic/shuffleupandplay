@@ -55,6 +55,7 @@ export type Room = {
   code: string
   name: string
   version: number
+  idleSweepAt: number | null
   players: Player[]
   createdAt: string
   updatedAt: string

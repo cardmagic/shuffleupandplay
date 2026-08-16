@@ -152,15 +152,23 @@ function wireActions(game, actorId) {
   document.addEventListener("pointercancel", cancelDrag)
 }
 
-async function sendAction(actorId, action) {
+async function sendAction(actorId, action, gestureKey = newGestureKey()) {
   const response = await fetch(`/api/tables/${actorId}/actions`, {
     method: "POST",
     credentials: "same-origin",
-    headers: { "content-type": "application/json", prefer: "respond-async" },
+    headers: {
+      "content-type": "application/json",
+      prefer: "respond-async",
+      "idempotency-key": gestureKey,
+    },
     body: JSON.stringify({ action }),
   })
   if (!response.ok) showToast("That action was not accepted. Try again.")
   return response.ok
+}
+
+function newGestureKey() {
+  return crypto.randomUUID()
 }
 
 const TAP_SLOP_PIXELS = 10

@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-const MAXIMUM_BODY_BYTES = 1_000_000
+const MAXIMUM_BODY_BYTES = 16 * 1024
 
 export type RequestContext = {
   request: IncomingMessage
