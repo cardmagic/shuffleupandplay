@@ -14,7 +14,6 @@ import { isPlayerInRoom } from "./game/room-snapshot.ts"
 const ACTION_METRICS_TABLE = "game_action_counts"
 const LEGACY_ACTION_METRICS_TABLE = "game_action_metrics"
 const METRICS_BUCKET_MILLISECONDS = 60 * 60 * 1_000
-const DEFAULT_POLLING_INTERVAL_MILLISECONDS = 500
 const MESSAGE_RETENTION_MILLISECONDS = 24 * 60 * 60 * 1_000
 const INSTANCE_RETENTION_MILLISECONDS = 7 * 24 * 60 * 60 * 1_000
 
@@ -49,8 +48,9 @@ export function createShuffleApplication(options: ShuffleRuntimeOptions): Shuffl
 
   const runtime = createRuntime({
     database,
-    pollingIntervalMilliseconds:
-      options.pollingIntervalMilliseconds ?? DEFAULT_POLLING_INTERVAL_MILLISECONDS,
+    ...(options.pollingIntervalMilliseconds === undefined
+      ? {}
+      : { pollingIntervalMilliseconds: options.pollingIntervalMilliseconds }),
     workerCount: options.workerCount ?? 1,
     effectWorkerCount: 1,
     broadcastWorkerCount: 1,

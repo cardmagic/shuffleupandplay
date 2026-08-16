@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       solid-objects:
-        specifier: ^0.13.0
-        version: 0.13.0
+        specifier: ^0.13.1
+        version: 0.13.1
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -341,8 +341,8 @@ packages:
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
 
-  solid-objects@0.13.0:
-    resolution: {integrity: sha512-7qNVkItHut/85y9KrVtdQsOLlC8HyIzRWCRQP3siWmjS4QO4NeVqfpaNkGSHF5w4oqmOxzRVH9gnR6XRrzeUgw==}
+  solid-objects@0.13.1:
+    resolution: {integrity: sha512-nu5SFu8Nx7vr5mr40aAovokgV1nLlqzEDwPczsZxi6O5n3bNyVJdpzCrgxqC0q/sBTUc30TsW7JY5cHMpfWSQQ==}
     engines: {node: '>=24.15.0'}
     hasBin: true
     peerDependencies:
@@ -740,7 +740,7 @@ snapshots:
 
   siginfo@2.0.0: {}
 
-  solid-objects@0.13.0: {}
+  solid-objects@0.13.1: {}
 
   source-map-js@1.2.1: {}
 

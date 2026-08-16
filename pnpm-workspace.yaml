@@ -1,2 +1,2 @@
 minimumReleaseAgeExclude:
-  - solid-objects@0.13.0
+  - solid-objects@0.13.0 || 0.13.1
