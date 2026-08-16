@@ -1,12 +1,12 @@
 import { attribute, escapeHtml, jsonAttribute } from "./escape.ts"
-import type { PlaymatAction } from "../../playmat/action.ts"
+import type { GameAction } from "../../game/action.ts"
 import type {
   PublicBattlefieldCard,
   PublicCard,
   PublicPlayer,
   PublicRoom,
   RoomPayload,
-} from "../../playmat/types.ts"
+} from "../../game/types.ts"
 
 export const COMPONENT_NAMES = ["player", "playerControls", "librarySearch", "gameResult"] as const
 
@@ -350,7 +350,7 @@ function renderGameResult(context: ComponentRenderContext): string {
 }
 
 function actionButton(options: {
-  action: PlaymatAction
+  action: GameAction
   label: string
   className?: string
   title?: string
@@ -364,7 +364,7 @@ function actionButton(options: {
     ? ` data-library-card-name="${attribute(options.libraryCardName)}"`
     : ""
 
-  return `<button type="button"${className}${title}${preview}${filter} data-playmat-action="${jsonAttribute(options.action)}">${options.label}</button>`
+  return `<button type="button"${className}${title}${preview}${filter} data-game-action="${jsonAttribute(options.action)}">${options.label}</button>`
 }
 
 function previewAttributes(card: PublicCard): string {

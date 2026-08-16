@@ -8,7 +8,7 @@ describe("session cookies", () => {
   test("round trips a signed session identifier", () => {
     const signed = signSessionId({ sessionId: "session-1", secret: SECRET })
 
-    expect(readSessionCookie({ cookieHeader: `mtgSession=${signed}`, secret: SECRET })).toBe(
+    expect(readSessionCookie({ cookieHeader: `shuffleSession=${signed}`, secret: SECRET })).toBe(
       "session-1",
     )
   })
@@ -18,13 +18,13 @@ describe("session cookies", () => {
     const signature = signSessionId({ sessionId: "session-1", secret: SECRET }).split(".")[1]
     const tampered = `${forged.split(".")[0]}.${signature}`
 
-    expect(readSessionCookie({ cookieHeader: `mtgSession=${tampered}`, secret: SECRET })).toBeNull()
+    expect(readSessionCookie({ cookieHeader: `shuffleSession=${tampered}`, secret: SECRET })).toBeNull()
   })
 
   test("refuses a value signed with another secret", () => {
     const signed = signSessionId({ sessionId: "session-1", secret: "another-secret-value-here" })
 
-    expect(readSessionCookie({ cookieHeader: `mtgSession=${signed}`, secret: SECRET })).toBeNull()
+    expect(readSessionCookie({ cookieHeader: `shuffleSession=${signed}`, secret: SECRET })).toBeNull()
   })
 
   test("returns null without a cookie", () => {
@@ -36,14 +36,14 @@ describe("session cookies", () => {
     const signed = signSessionId({ sessionId: "session-1", secret: SECRET })
 
     expect(
-      readSessionCookie({ cookieHeader: `theme=dark; mtgSession=${signed}; other=1`, secret: SECRET }),
+      readSessionCookie({ cookieHeader: `theme=dark; shuffleSession=${signed}; other=1`, secret: SECRET }),
     ).toBe("session-1")
   })
 
   test("writes a long lived host only cookie", () => {
     const header = sessionCookieHeader({ sessionId: "session-1", secret: SECRET, secure: true })
 
-    expect(header).toContain("mtgSession=")
+    expect(header).toContain("shuffleSession=")
     expect(header).toContain("HttpOnly")
     expect(header).toContain("SameSite=Lax")
     expect(header).toContain("Secure")

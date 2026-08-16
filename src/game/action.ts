@@ -1,6 +1,6 @@
 import { DECK_POSITIONS, ZONE_NAMES, type DeckPosition, type ZoneName } from "./types.ts"
 
-export type PlaymatAction =
+export type GameAction =
   | { type: "drawCard"; count?: number }
   | { type: "shuffleLibrary" }
   | { type: "untapAll" }
@@ -26,20 +26,20 @@ export type PlaymatAction =
   | { type: "moveCounter"; instanceId: string; counterId: string; x: number; y: number }
   | { type: "updateCounterValue"; instanceId: string; counterId: string; delta: number }
 
-export type PlaymatActionType = PlaymatAction["type"]
+export type GameActionType = GameAction["type"]
 
 const NUMERIC_ATTRIBUTE_NAMES = ["count", "delta", "value", "x", "y"]
 
-const TYPE_ALIASES: Record<string, PlaymatActionType> = {
+const TYPE_ALIASES: Record<string, GameActionType> = {
   openLibrarySearch: "openDeckSearch",
   closeLibrarySearch: "closeDeckSearch",
 }
 
 type RawAttributes = Record<string, unknown>
 
-type Builder = (attributes: RawAttributes) => PlaymatAction | null
+type Builder = (attributes: RawAttributes) => GameAction | null
 
-const BUILDERS: Record<PlaymatActionType, Builder> = {
+const BUILDERS: Record<GameActionType, Builder> = {
   drawCard: (attributes) => {
     if (attributes.count === undefined) return { type: "drawCard" }
     if (!isFiniteNumber(attributes.count)) return null
@@ -79,7 +79,7 @@ const BUILDERS: Record<PlaymatActionType, Builder> = {
     const to = zoneName(attributes.to)
     if (!from || !to) return null
 
-    const action: PlaymatAction = { type: "moveCardZone", instanceId, from, to }
+    const action: GameAction = { type: "moveCardZone", instanceId, from, to }
     if (attributes.x !== undefined) {
       if (!isFiniteNumber(attributes.x)) return null
       action.x = attributes.x
@@ -137,7 +137,7 @@ const BUILDERS: Record<PlaymatActionType, Builder> = {
   },
 }
 
-export function parseAction(rawAction: unknown): PlaymatAction | null {
+export function parseAction(rawAction: unknown): GameAction | null {
   if (!isPlainObject(rawAction)) return null
 
   const type = actionType(rawAction.type)
@@ -146,11 +146,11 @@ export function parseAction(rawAction: unknown): PlaymatAction | null {
   return BUILDERS[type](normalizeNumericAttributes(rawAction))
 }
 
-function actionType(value: unknown): PlaymatActionType | null {
+function actionType(value: unknown): GameActionType | null {
   if (typeof value !== "string") return null
 
   const resolved = TYPE_ALIASES[value] ?? value
-  return resolved in BUILDERS ? (resolved as PlaymatActionType) : null
+  return resolved in BUILDERS ? (resolved as GameActionType) : null
 }
 
 function normalizeNumericAttributes(attributes: RawAttributes): RawAttributes {

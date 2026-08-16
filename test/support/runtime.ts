@@ -4,11 +4,11 @@ import { join } from "node:path"
 
 import type { SolidObjectsRuntime } from "solid-objects"
 
-import { createPlaymatApplication, type PlaymatApplication } from "../../src/runtime.ts"
+import { createShuffleApplication, type ShuffleApplication } from "../../src/runtime.ts"
 import type { ArchidektDeck, DeckSearchResult } from "../../src/archidekt/client.ts"
 
 export type TestRuntime = {
-  application: PlaymatApplication
+  application: ShuffleApplication
   runtime: SolidObjectsRuntime
   instrumentation: string[]
   deckRequests: string[]
@@ -20,11 +20,11 @@ export type TestRuntimeOptions = {
 }
 
 export async function startTestRuntime(options: TestRuntimeOptions = {}): Promise<TestRuntime> {
-  const directory = mkdtempSync(join(tmpdir(), "mtg-playmat-node-"))
+  const directory = mkdtempSync(join(tmpdir(), "shuffleupandplay-"))
   const instrumentation: string[] = []
   const deckRequests: string[] = []
 
-  const application = createPlaymatApplication({
+  const application = createShuffleApplication({
     databasePath: join(directory, "solid-objects.sqlite3"),
     pollingIntervalMilliseconds: 10,
     instrumentation: (event) => instrumentation.push(event.name),

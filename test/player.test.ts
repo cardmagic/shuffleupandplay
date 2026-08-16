@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest"
 
-import { applyPlayerAction, buildPlayer } from "../src/playmat/player.ts"
-import type { PlaymatAction } from "../src/playmat/action.ts"
-import type { Card, Player } from "../src/playmat/types.ts"
+import { applyPlayerAction, buildPlayer } from "../src/game/player.ts"
+import type { GameAction } from "../src/game/action.ts"
+import type { Card, Player } from "../src/game/types.ts"
 
 const REVERSING_RANDOMNESS = {
   identifier: () => "counter-1",
@@ -28,7 +28,7 @@ function playerWithCards(): Player {
   }
 }
 
-function apply(player: Player, action: PlaymatAction): Player {
+function apply(player: Player, action: GameAction): Player {
   return applyPlayerAction({ player, action, randomness: REVERSING_RANDOMNESS })
 }
 

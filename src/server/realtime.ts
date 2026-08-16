@@ -3,8 +3,8 @@ import type { Server } from "node:http"
 import type { SolidObjectsRuntime } from "solid-objects"
 import { WebSocketServer, type WebSocket } from "ws"
 
-import type { PlaymatViewer } from "../actors/playmat-room.ts"
-import { normalizeRoomCode } from "../playmat/room-code.ts"
+import type { GameViewer } from "../actors/game-room.ts"
+import { normalizeRoomCode } from "../game/room-code.ts"
 import { readSessionCookie } from "./session.ts"
 
 const REALTIME_PATH = "/solid-objects"
@@ -33,7 +33,7 @@ export function attachRealtime(options: {
       return
     }
 
-    const viewer: PlaymatViewer = { sessionId, roomCode }
+    const viewer: GameViewer = { sessionId, roomCode }
     const session = options.runtime.realtime.connect({
       authorizationContext: viewer,
       send: (envelope) => socket.send(JSON.stringify(envelope)),

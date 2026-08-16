@@ -2,29 +2,29 @@ import { mkdirSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import type { DashboardAccess } from "solid-objects/web"
 
-import { PlaymatRoom } from "./actors/playmat-room.ts"
-import { createPlaymatApplication } from "./runtime.ts"
-import { createPlaymatServer } from "./server/app.ts"
+import { GameRoom } from "./actors/game-room.ts"
+import { createShuffleApplication } from "./runtime.ts"
+import { createShuffleServer } from "./server/app.ts"
 
 const databasePath = resolve(
-  process.env.PLAYMAT_DATABASE_PATH ?? "storage/solid-objects.sqlite3",
+  process.env.SHUFFLE_DATABASE_PATH ?? "storage/solid-objects.sqlite3",
 )
-const secret = process.env.PLAYMAT_SECRET
+const secret = process.env.SHUFFLE_SECRET
 if (!secret || secret.length < 32) {
-  throw new Error("PLAYMAT_SECRET must be set to at least 32 characters")
+  throw new Error("SHUFFLE_SECRET must be set to at least 32 characters")
 }
-const operatorDashboardAccess = dashboardAccess(process.env.PLAYMAT_OPERATOR_DASHBOARD)
+const operatorDashboardAccess = dashboardAccess(process.env.SHUFFLE_OPERATOR_DASHBOARD)
 if (
   operatorDashboardAccess &&
   operatorDashboardAccess !== "public-read-only" &&
   process.env.NODE_ENV === "production"
 ) {
-  throw new Error("PLAYMAT_OPERATOR_DASHBOARD cannot be enabled in production")
+  throw new Error("SHUFFLE_OPERATOR_DASHBOARD cannot be enabled in production")
 }
 
 mkdirSync(dirname(databasePath), { recursive: true })
 
-const application = createPlaymatApplication({
+const application = createShuffleApplication({
   databasePath,
   instrumentation: (event) => {
     if (!event.name.endsWith(".failed")) return
@@ -33,7 +33,7 @@ const application = createPlaymatApplication({
 })
 await application.install()
 
-const server = createPlaymatServer({
+const server = createShuffleServer({
   application,
   secret,
   secureCookies: process.env.NODE_ENV === "production",
@@ -43,8 +43,8 @@ const server = createPlaymatServer({
 })
 
 const port = await server.listen(Number(process.env.PORT ?? 3000))
-console.log(`MTG Playmat listening on http://localhost:${port}`)
-console.log(`Actor type: ${PlaymatRoom.actorType}`)
+console.log(`Shuffle Up and Play listening on http://localhost:${port}`)
+console.log(`Actor type: ${GameRoom.actorType}`)
 
 const shutdown = new AbortController()
 let shuttingDown = false
@@ -68,5 +68,5 @@ function dashboardAccess(value: string | undefined): DashboardAccess | undefined
   if (value === "true" || value === "authorized") return "authorized"
   if (value === "authorized-read-only") return value
   if (value === "public-read-only") return value
-  throw new Error(`unsupported PLAYMAT_OPERATOR_DASHBOARD mode ${value}`)
+  throw new Error(`unsupported SHUFFLE_OPERATOR_DASHBOARD mode ${value}`)
 }

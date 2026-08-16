@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { WebSocket } from "ws"
 
 import { jsonRequest, startTestServer, type TestClient, type TestServer } from "./support/server.ts"
-import type { RoomPayload } from "../src/playmat/types.ts"
+import type { RoomPayload } from "../src/game/types.ts"
 
 let server: TestServer
 let shutdown: AbortController
@@ -83,7 +83,7 @@ async function subscribe(options: {
     JSON.stringify({
       version: 1,
       action: "subscribe",
-      actorType: "PlaymatRoom",
+      actorType: "GameRoom",
       actorId: options.roomCode,
       ...(options.payloads ? { payloads: options.payloads } : {}),
     }),
@@ -155,9 +155,9 @@ describe("realtime subscriptions", () => {
     const aliceSubscriber = await subscribe({
       client: alice,
       roomCode: code,
-      payloads: ["playmat"],
+      payloads: ["game"],
     })
-    const bobSubscriber = await subscribe({ client: bob, roomCode: code, payloads: ["playmat"] })
+    const bobSubscriber = await subscribe({ client: bob, roomCode: code, payloads: ["game"] })
 
     await alice.fetch(`/api/spaces/${code}/deck`, jsonRequest({ deckId: "55" }))
     await alice.fetch(

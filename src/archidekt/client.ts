@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import { NonRetryableError } from "solid-objects"
 
-import type { Card } from "../playmat/types.ts"
+import type { Card } from "../game/types.ts"
 
 const BASE_URL = "https://archidekt.com"
 const TRUSTED_HOST = "archidekt.com"

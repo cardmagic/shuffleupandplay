@@ -1,7 +1,7 @@
 import { startTestRuntime, type TestRuntime, type TestRuntimeOptions } from "./runtime.ts"
 import {
-  createPlaymatServer,
-  type PlaymatOperatorDashboardOptions,
+  createShuffleServer,
+  type ShuffleOperatorDashboardOptions,
 } from "../../src/server/app.ts"
 
 const SECRET = "test-secret-that-is-long-enough-for-hmac"
@@ -21,13 +21,13 @@ export type TestClient = {
 }
 
 export type TestServerOptions = TestRuntimeOptions & {
-  operatorDashboard?: PlaymatOperatorDashboardOptions
+  operatorDashboard?: ShuffleOperatorDashboardOptions
 }
 
 export async function startTestServer(options: TestServerOptions = {}): Promise<TestServer> {
   const { operatorDashboard, ...runtimeOptions } = options
   const harness = await startTestRuntime(runtimeOptions)
-  const server = createPlaymatServer({
+  const server = createShuffleServer({
     application: harness.application,
     secret: SECRET,
     ...(operatorDashboard ? { operatorDashboard } : {}),

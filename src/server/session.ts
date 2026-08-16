@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto"
 
-export const SESSION_COOKIE_NAME = "mtgSession"
+export const SESSION_COOKIE_NAME = "shuffleSession"
 
 const COOKIE_MAXIMUM_AGE_SECONDS = 400 * 24 * 60 * 60
 

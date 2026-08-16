@@ -9,15 +9,15 @@ import {
 } from "solid-objects"
 
 import { MatchLog } from "./match-log.ts"
-import { parseAction } from "../playmat/action.ts"
-import { applyPlayerAction, buildPlayer } from "../playmat/player.ts"
+import { parseAction } from "../game/action.ts"
+import { applyPlayerAction, buildPlayer } from "../game/player.ts"
 import {
   isPlayerInRoom,
   playerForSession,
   playerSummaries,
   roomPayload,
-} from "../playmat/room-snapshot.ts"
-import type { Card, Player, PlayerSummary, Room, RoomPayload } from "../playmat/types.ts"
+} from "../game/room-snapshot.ts"
+import type { Card, Player, PlayerSummary, Room, RoomPayload } from "../game/types.ts"
 
 const MAXIMUM_PLAYERS = 2
 const MAXIMUM_ROOM_NAME_LENGTH = 40
@@ -26,7 +26,7 @@ const DEFAULT_ROOM_NAME = "Gaming Table"
 const IDLE_SWEEP_DELAY_MILLISECONDS = 5 * 60 * 1_000
 const STARTING_LIFE = 20
 
-export type PlaymatViewer = {
+export type GameViewer = {
   sessionId: string
   roomCode: string
 }
@@ -41,8 +41,8 @@ type DeckEffectArguments = {
   sessionId: string
 }
 
-export class PlaymatRoom extends Actor {
-  static override readonly actorType = "PlaymatRoom"
+export class GameRoom extends Actor {
+  static override readonly actorType = "GameRoom"
   static override readonly stateVersion = 3
   static override readonly migrations = [
     {
@@ -62,7 +62,7 @@ export class PlaymatRoom extends Actor {
   ]
 
   static override readonly payloads = {
-    playmat: (actor: PlaymatRoom, viewer: PlaymatViewer): RoomPayload => {
+    game: (actor: GameRoom, viewer: GameViewer): RoomPayload => {
       const room = actor.room
       if (!room) return { space: null, currentPlayerId: null }
       if (!isPlayerInRoom({ room, sessionId: viewer.sessionId })) {
@@ -70,7 +70,7 @@ export class PlaymatRoom extends Actor {
       }
       return roomPayload({ room, sessionId: viewer.sessionId })
     },
-  } satisfies PayloadBroadcasts<PlaymatRoom, PlaymatViewer>
+  } satisfies PayloadBroadcasts<GameRoom, GameViewer>
 
   room: Room | null = null
 
@@ -228,7 +228,7 @@ export class PlaymatRoom extends Actor {
     const action = parseAction(options.action)
     if (!action) {
       this.reject("invalidAction", {
-        message: "The action payload is not a supported playmat action",
+        message: "The action payload is not a supported game action",
       })
     }
 

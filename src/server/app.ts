@@ -12,11 +12,11 @@ import {
   type NodeDashboardHandler,
 } from "solid-objects/web"
 
-import { PlaymatRoom, type PlaymatViewer } from "../actors/playmat-room.ts"
+import { GameRoom, type GameViewer } from "../actors/game-room.ts"
 import { extractDeckId } from "../archidekt/deck-id.ts"
-import { generateRoomCode, normalizeRoomCode } from "../playmat/room-code.ts"
-import type { RoomPayload } from "../playmat/types.ts"
-import type { PlaymatApplication } from "../runtime.ts"
+import { generateRoomCode, normalizeRoomCode } from "../game/room-code.ts"
+import type { RoomPayload } from "../game/types.ts"
+import type { ShuffleApplication } from "../runtime.ts"
 import {
   isRecord,
   readBody,
@@ -33,7 +33,7 @@ import {
   renderComponent,
   type ComponentRenderContext,
 } from "./render/components.ts"
-import { lobbyPage, playmatPage } from "./render/pages.ts"
+import { lobbyPage, gamePage } from "./render/pages.ts"
 import {
   generateSessionId,
   readSessionCookie,
@@ -65,25 +65,25 @@ const CONTENT_TYPES: Record<string, string> = {
   ".map": "application/json; charset=utf-8",
 }
 
-export type PlaymatServerOptions = {
-  application: PlaymatApplication
+export type ShuffleServerOptions = {
+  application: ShuffleApplication
   secret: string
   secureCookies?: boolean
-  operatorDashboard?: PlaymatOperatorDashboardOptions
+  operatorDashboard?: ShuffleOperatorDashboardOptions
 }
 
-export type PlaymatOperatorDashboardOptions = {
+export type ShuffleOperatorDashboardOptions = {
   mountPath?: string
   access?: DashboardAccess
 }
 
-export type PlaymatServer = {
+export type ShuffleServer = {
   server: Server
   listen(port: number): Promise<number>
   close(): Promise<void>
 }
 
-export function createPlaymatServer(options: PlaymatServerOptions): PlaymatServer {
+export function createShuffleServer(options: ShuffleServerOptions): ShuffleServer {
   const { application, secret } = options
   const runtime = application.runtime
   const secureCookies = options.secureCookies ?? false
@@ -143,7 +143,7 @@ export function createPlaymatServer(options: PlaymatServerOptions): PlaymatServe
 async function handle(options: {
   request: IncomingMessage
   response: ServerResponse
-  application: PlaymatApplication
+  application: ShuffleApplication
   runtime: SolidObjectsRuntime
   requestSession: RequestSession
 }): Promise<void> {
@@ -170,7 +170,7 @@ async function handle(options: {
 
 async function route(options: {
   context: RequestContext
-  application: PlaymatApplication
+  application: ShuffleApplication
   runtime: SolidObjectsRuntime
 }): Promise<void> {
   const { context, application, runtime } = options
@@ -179,7 +179,7 @@ async function route(options: {
 
   if (method === "GET" && path === "/") return showLobby(context)
   if (method === "GET" && path.startsWith("/spaces/")) {
-    return showPlaymat({ context, runtime, roomCode: path.slice("/spaces/".length) })
+    return showGame({ context, runtime, roomCode: path.slice("/spaces/".length) })
   }
   if (method === "POST" && path === "/api/spaces") return createSpace({ context, runtime })
   if (method === "POST" && path === "/api/spaces/join") return joinByCode({ context, runtime })
@@ -216,7 +216,7 @@ function showLobby(context: RequestContext): void {
   })
 }
 
-async function showPlaymat(options: {
+async function showGame(options: {
   context: RequestContext
   runtime: SolidObjectsRuntime
   roomCode: string
@@ -235,7 +235,7 @@ async function showPlaymat(options: {
   sendHtml({
     context,
     status: 200,
-    body: playmatPage({
+    body: gamePage({
       payload,
       roomCode,
       seat,
@@ -271,7 +271,7 @@ async function tryCreateRoom(options: {
   const { context, runtime, roomCode, body } = options
   try {
     await runtime
-      .ref(PlaymatRoom, roomCode)
+      .ref(GameRoom, roomCode)
       .with({ authorizationContext: viewerFor({ context, roomCode }) })
       .createRoom({
         code: roomCode,
@@ -320,7 +320,7 @@ async function joinRoom(options: {
   playerName: string
 }): Promise<void> {
   await options.runtime
-    .ref(PlaymatRoom, options.roomCode)
+    .ref(GameRoom, options.roomCode)
     .with({ authorizationContext: viewerFor(options) })
     .join({ playerName: options.playerName, sessionId: options.context.sessionId })
 }
@@ -361,7 +361,7 @@ async function loadDeck(options: {
   }
 
   await runtime
-    .ref(PlaymatRoom, roomCode)
+    .ref(GameRoom, roomCode)
     .with({ authorizationContext: viewerFor(options) })
     .requestDeck({ deckId, sessionId: context.sessionId })
 
@@ -380,12 +380,12 @@ async function applyAction(options: {
   const action = asJsonObject(isRecord(body.action) ? body.action : body)
 
   const reference = runtime
-    .ref(PlaymatRoom, roomCode)
+    .ref(GameRoom, roomCode)
     .with({ authorizationContext: viewerFor(options) })
 
   if (context.request.headers.prefer === "respond-async") {
     await runtime
-      .ref(PlaymatRoom, roomCode)
+      .ref(GameRoom, roomCode)
       .send.with({ authorizationContext: viewerFor(options) })
       .applyAction({ action, sessionId: context.sessionId })
     return sendEmpty({ context, status: 202 })
@@ -397,7 +397,7 @@ async function applyAction(options: {
 
 async function searchDecks(options: {
   context: RequestContext
-  application: PlaymatApplication
+  application: ShuffleApplication
 }): Promise<void> {
   const { context, application } = options
   const query = context.url.searchParams.get("q") ?? ""
@@ -417,7 +417,7 @@ async function refreshComponents(options: {
   const { context, runtime } = options
   const body = await readBody(context.request)
   const roomCode = normalizeRoomCode(body.actorId)
-  if (body.actorType !== PlaymatRoom.actorType || roomCode.length === 0) {
+  if (body.actorType !== GameRoom.actorType || roomCode.length === 0) {
     return sendJson({ context, status: 400, body: { error: "Unknown component request" } })
   }
 
@@ -472,20 +472,20 @@ async function projectRoom(options: {
   sessionId: string
 }): Promise<RoomPayload | null> {
   const payloads = await options.runtime.subscriptionPayloads({
-    actorType: PlaymatRoom.actorType,
+    actorType: GameRoom.actorType,
     actorId: options.roomCode,
-    payloadNames: ["playmat"],
+    payloadNames: ["game"],
     authorizationContext: {
       sessionId: options.sessionId,
       roomCode: options.roomCode,
-    } satisfies PlaymatViewer,
+    } satisfies GameViewer,
   })
 
   const payload = payloads[0]?.payload
   return payload ? (payload as unknown as RoomPayload) : null
 }
 
-function viewerFor(options: { context: RequestContext; roomCode: string }): PlaymatViewer {
+function viewerFor(options: { context: RequestContext; roomCode: string }): GameViewer {
   return { sessionId: options.context.sessionId, roomCode: options.roomCode }
 }
 
@@ -553,7 +553,7 @@ function createOperatorDashboardHandler(options: {
   runtime: SolidObjectsRuntime
   requestSessions: WeakMap<IncomingMessage, RequestSession>
   dashboardSessions: Map<string, Map<string, string>>
-  options: PlaymatOperatorDashboardOptions
+  options: ShuffleOperatorDashboardOptions
 }): NodeDashboardHandler {
   const dashboard = createDashboard({
     runtime: options.runtime,

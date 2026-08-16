@@ -10,7 +10,7 @@ import {
 
 import { componentDeclarations } from "../src/server/render/pages.ts"
 import { jsonRequest, startTestServer, type TestClient, type TestServer } from "./support/server.ts"
-import type { RoomPayload } from "../src/playmat/types.ts"
+import type { RoomPayload } from "../src/game/types.ts"
 
 let server: TestServer
 let shutdown: AbortController
@@ -66,7 +66,7 @@ function openSession(options: { client: TestClient; roomCode: string; seat: numb
 
   for (const declaration of componentDeclarations(options.seat)) {
     registry.register({
-      actorType: "PlaymatRoom",
+      actorType: "GameRoom",
       actorId: options.roomCode,
       target:
         declaration.key === undefined
@@ -99,9 +99,9 @@ function openSession(options: { client: TestClient; roomCode: string; seat: numb
   })
 
   client.subscribe({
-    actorType: "PlaymatRoom",
+    actorType: "GameRoom",
     actorId: options.roomCode,
-    payloads: ["playmat"],
+    payloads: ["game"],
   })
   client.connect()
 
@@ -136,7 +136,7 @@ describe("published browser client", () => {
     await waitFor(() => session.payloads.length > 0, "the replayed payload")
 
     expect(session.invalidations[0]?.observables).toMatchObject({ version: 1 })
-    expect(session.payloads[0]?.name).toBe("playmat")
+    expect(session.payloads[0]?.name).toBe("game")
     session.close()
   })
 
@@ -179,7 +179,7 @@ describe("published browser client", () => {
     await new Promise((resolve) => setTimeout(resolve, 200))
 
     expect(session.refreshRequests).toHaveLength(1)
-    expect(session.refreshRequests[0]?.batch).toBe("playmat")
+    expect(session.refreshRequests[0]?.batch).toBe("game")
     expect(session.refreshRequests[0]?.targets.sort()).toEqual([
       "component-gameResult",
       "component-librarySearch-1",

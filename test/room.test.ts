@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest"
 
-import { generateRoomCode, normalizeRoomCode } from "../src/playmat/room-code.ts"
-import { buildPlayer } from "../src/playmat/player.ts"
-import { playerSummaries, roomPayload } from "../src/playmat/room-snapshot.ts"
-import type { Card, Room } from "../src/playmat/types.ts"
+import { generateRoomCode, normalizeRoomCode } from "../src/game/room-code.ts"
+import { buildPlayer } from "../src/game/player.ts"
+import { playerSummaries, roomPayload } from "../src/game/room-snapshot.ts"
+import type { Card, Room } from "../src/game/types.ts"
 
 function card(instanceId: string): Card {
   return {

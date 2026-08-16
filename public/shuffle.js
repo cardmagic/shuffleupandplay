@@ -3,13 +3,13 @@ import {
   SolidObjectsComponentRegistry,
 } from "/vendor/solid-objects/browser/index.js"
 
-const playmat = document.querySelector("[data-playmat]")
-if (playmat) start(playmat)
+const game = document.querySelector("[data-game]")
+if (game) start(game)
 
-function start(playmat) {
-  const actorType = playmat.dataset.actorType
-  const actorId = playmat.dataset.actorId
-  const declarations = JSON.parse(playmat.dataset.components)
+function start(game) {
+  const actorType = game.dataset.actorType
+  const actorId = game.dataset.actorId
+  const declarations = JSON.parse(game.dataset.components)
 
   const registry = new SolidObjectsComponentRegistry({
     refresh: async ({ actorType, actorId, instanceId, revision, batch, components, signal }) => {
@@ -57,17 +57,17 @@ function start(playmat) {
       registry.invalidate(envelope)
     },
     onPayload: (envelope) => {
-      if (envelope.name !== "playmat") return
+      if (envelope.name !== "game") return
       applyVersion(envelope.payload?.space?.version)
     },
     onError: () => setConnectionState("Reconnecting…"),
   })
 
-  client.subscribe({ actorType, actorId, payloads: ["playmat"] })
+  client.subscribe({ actorType, actorId, payloads: ["game"] })
   client.connect()
 
-  wireActions(playmat, actorId)
-  wireDeckForms(playmat, actorId)
+  wireActions(game, actorId)
+  wireDeckForms(game, actorId)
   wireCardPreview()
   wireLibraryFilter()
   wireCopyButton()
@@ -81,10 +81,10 @@ function targetIdFor(declaration) {
 
 function applyVersion(version) {
   if (typeof version !== "number") return
-  const playmat = document.querySelector("[data-playmat]")
-  if (!playmat) return
-  playmat.dataset.roomVersion = String(version)
-  const label = playmat.querySelector("[data-room-version-label]")
+  const game = document.querySelector("[data-game]")
+  if (!game) return
+  game.dataset.roomVersion = String(version)
+  const label = game.querySelector("[data-room-version-label]")
   if (label) label.textContent = String(version)
 }
 
@@ -103,21 +103,21 @@ function morph(target, rendered) {
   if (activeId) document.getElementById(activeId)?.focus()
 }
 
-function wireActions(playmat, actorId) {
+function wireActions(game, actorId) {
   document.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-playmat-action]")
+    const button = event.target.closest("[data-game-action]")
     if (!button) return
 
     event.preventDefault()
     button.disabled = true
     try {
-      await sendAction(actorId, JSON.parse(button.dataset.playmatAction))
+      await sendAction(actorId, JSON.parse(button.dataset.gameAction))
     } finally {
       button.disabled = false
     }
   })
 
-  document.addEventListener("pointerdown", (event) => beginDrag(event, playmat))
+  document.addEventListener("pointerdown", (event) => beginDrag(event, game))
   document.addEventListener("pointermove", moveDrag)
   document.addEventListener("pointerup", (event) => finishDrag(event, actorId))
   document.addEventListener("pointercancel", cancelDrag)
@@ -135,7 +135,7 @@ async function sendAction(actorId, action) {
 
 let drag = null
 
-function beginDrag(event, playmat) {
+function beginDrag(event, game) {
   const palette = event.target.closest("[data-counter-palette]")
   if (palette) {
     drag = { kind: "counterPalette" }
@@ -159,7 +159,7 @@ function beginDrag(event, playmat) {
 
   const card = event.target.closest(".battlefield-card")
   if (!card || event.target.closest("button, .counter-chip")) return
-  if (!belongsToCurrentPlayer(card, playmat)) return
+  if (!belongsToCurrentPlayer(card, game)) return
 
   const canvas = card.closest(".battlefield-canvas")
   const cardRectangle = card.getBoundingClientRect()
@@ -247,11 +247,11 @@ function cancelDrag() {
   drag = null
 }
 
-function belongsToCurrentPlayer(card, playmat) {
-  return card.closest(".player-section")?.dataset.currentPlayer === "true" && Boolean(playmat)
+function belongsToCurrentPlayer(card, game) {
+  return card.closest(".player-section")?.dataset.currentPlayer === "true" && Boolean(game)
 }
 
-function wireDeckForms(playmat, actorId) {
+function wireDeckForms(game, actorId) {
   document.addEventListener("submit", async (event) => {
     const searchForm = event.target.closest("[data-deck-search]")
     if (searchForm) {

@@ -2,19 +2,19 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { Rejected } from "solid-objects"
 
 import { MatchLog } from "../src/actors/match-log.ts"
-import { PlaymatRoom, type PlaymatViewer } from "../src/actors/playmat-room.ts"
+import { GameRoom, type GameViewer } from "../src/actors/game-room.ts"
 import { startTestRuntime, type TestRuntime } from "./support/runtime.ts"
 
 const OPERATOR = { source: "cli" }
 
 let harness: TestRuntime
 
-function viewer(sessionId: string, roomCode: string): PlaymatViewer {
+function viewer(sessionId: string, roomCode: string): GameViewer {
   return { sessionId, roomCode }
 }
 
 function room(code: string) {
-  return harness.runtime.ref(PlaymatRoom, code)
+  return harness.runtime.ref(GameRoom, code)
 }
 
 async function createdRoom(code: string) {

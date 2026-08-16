@@ -7,7 +7,7 @@ import {
   type TestClient,
   type TestServer,
 } from "./support/server.ts"
-import type { RoomPayload } from "../src/playmat/types.ts"
+import type { RoomPayload } from "../src/game/types.ts"
 
 let server: TestServer
 
@@ -38,7 +38,7 @@ describe("sessions", () => {
     const response = await client.fetch("/")
 
     expect(response.status).toBe(200)
-    expect(client.cookie).toMatch(/^mtgSession=/)
+    expect(client.cookie).toMatch(/^shuffleSession=/)
   })
 
   test("keeps the same session across requests", async () => {
@@ -69,7 +69,7 @@ describe("operator dashboard", () => {
     const html = await response.text()
 
     expect(response.status).toBe(200)
-    expect(html).toContain("PlaymatRoom")
+    expect(html).toContain("GameRoom")
     expect(html).toContain("Instances")
     expect(html).toContain("Read only")
     expect(html).not.toContain("authenticity_token")
@@ -142,7 +142,7 @@ describe("space lifecycle over HTTP", () => {
     const page = await alice.fetch(location, { headers: { accept: "text/html" } })
     const html = await page.text()
     expect(page.status).toBe(200)
-    expect(html).toContain("data-playmat")
+    expect(html).toContain("data-game")
     expect(html).toContain("Kitchen Table")
     expect(html).toContain("Alice")
 
@@ -357,11 +357,11 @@ describe("component refresh endpoint", () => {
     const frames = await alice.json<{ target: string; rendered: string }[]>(
       "/api/components/refresh",
       jsonRequest({
-        actorType: "PlaymatRoom",
+        actorType: "GameRoom",
         actorId: code,
         instanceId: "unused",
         revision: "2",
-        batch: "playmat",
+        batch: "game",
         components: [
           { name: "player", key: "1", target: "component-player-1", observes: ["seatOne"] },
         ],
@@ -379,7 +379,7 @@ describe("component refresh endpoint", () => {
     const response = await server.client().fetch(
       "/api/components/refresh",
       jsonRequest({
-        actorType: "PlaymatRoom",
+        actorType: "GameRoom",
         actorId: code,
         instanceId: "unused",
         revision: "2",
@@ -399,7 +399,7 @@ describe("component refresh endpoint", () => {
     const frames = await alice.json<unknown[]>(
       "/api/components/refresh",
       jsonRequest({
-        actorType: "PlaymatRoom",
+        actorType: "GameRoom",
         actorId: code,
         instanceId: "unused",
         revision: "1",

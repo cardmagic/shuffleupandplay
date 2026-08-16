@@ -7,13 +7,13 @@ import {
 import { sqlite } from "solid-objects/database/sqlite"
 
 import { MatchLog } from "./actors/match-log.ts"
-import { PlaymatRoom, type DeckResult, type PlaymatViewer } from "./actors/playmat-room.ts"
+import { GameRoom, type DeckResult, type GameViewer } from "./actors/game-room.ts"
 import { createArchidektClient, type ArchidektClient } from "./archidekt/client.ts"
-import { isPlayerInRoom } from "./playmat/room-snapshot.ts"
+import { isPlayerInRoom } from "./game/room-snapshot.ts"
 
-const ACTION_METRICS_TABLE = "playmat_action_metrics"
+const ACTION_METRICS_TABLE = "game_action_metrics"
 
-export type PlaymatRuntimeOptions = {
+export type ShuffleRuntimeOptions = {
   databasePath: string
   pollingIntervalMilliseconds?: number
   workerCount?: number
@@ -21,7 +21,7 @@ export type PlaymatRuntimeOptions = {
   archidekt?: ArchidektClient
 }
 
-export type PlaymatApplication = {
+export type ShuffleApplication = {
   runtime: SolidObjectsRuntime
   archidekt: ArchidektClient
   install(): Promise<void>
@@ -36,7 +36,7 @@ export type ActionMetric = {
   recordedAtMilliseconds: number
 }
 
-export function createPlaymatApplication(options: PlaymatRuntimeOptions): PlaymatApplication {
+export function createShuffleApplication(options: ShuffleRuntimeOptions): ShuffleApplication {
   const database = sqlite({ path: options.databasePath, timeoutMilliseconds: 5_000 })
   const archidekt = options.archidekt ?? createArchidektClient()
 
@@ -47,8 +47,8 @@ export function createPlaymatApplication(options: PlaymatRuntimeOptions): Playma
     effectWorkerCount: 1,
     broadcastWorkerCount: 1,
     reminderSchedulerCount: 1,
-    messageRetentionByActorType: { [PlaymatRoom.actorType]: 24 * 60 * 60 * 1_000 },
-    instanceRetentionByActorType: { [PlaymatRoom.actorType]: 7 * 24 * 60 * 60 * 1_000 },
+    messageRetentionByActorType: { [GameRoom.actorType]: 24 * 60 * 60 * 1_000 },
+    instanceRetentionByActorType: { [GameRoom.actorType]: 7 * 24 * 60 * 60 * 1_000 },
     ...(options.instrumentation ? { instrumentation: options.instrumentation } : {}),
     authorizeMessage: ({ actorType, actorId, authorizationContext }) =>
       authorizesActor({ actorType, actorId, authorizationContext }),
@@ -58,11 +58,11 @@ export function createPlaymatApplication(options: PlaymatRuntimeOptions): Playma
     authorizeAdministration: ({ authorizationContext }) => isOperator(authorizationContext),
     authorizeSubscription: async ({ actorType, actorId, authorizationContext }) => {
       if (!authorizesActor({ actorType, actorId, authorizationContext })) return false
-      if (actorType !== PlaymatRoom.actorType) return true
+      if (actorType !== GameRoom.actorType) return true
 
-      const viewer = authorizationContext as PlaymatViewer
+      const viewer = authorizationContext as GameViewer
       const snapshot = await runtime
-        .ref(PlaymatRoom, actorId)
+        .ref(GameRoom, actorId)
         .snapshot({ authorizationContext: viewer })
       if (!snapshot.room) return false
 
@@ -70,7 +70,7 @@ export function createPlaymatApplication(options: PlaymatRuntimeOptions): Playma
     },
   })
 
-  runtime.register(PlaymatRoom)
+  runtime.register(GameRoom)
   runtime.register(MatchLog)
 
   runtime.registerEffect("fetchArchidektDeck", async (argumentsValue): Promise<DeckResult> => {
@@ -144,10 +144,10 @@ function authorizesActor(options: {
   if (!isViewer(viewer)) return false
   if (viewer.roomCode !== options.actorId) return false
 
-  return options.actorType === PlaymatRoom.actorType || options.actorType === MatchLog.actorType
+  return options.actorType === GameRoom.actorType || options.actorType === MatchLog.actorType
 }
 
-function isViewer(value: unknown): value is PlaymatViewer {
+function isViewer(value: unknown): value is GameViewer {
   if (!isRecord(value)) return false
   return typeof value.sessionId === "string" && typeof value.roomCode === "string"
 }

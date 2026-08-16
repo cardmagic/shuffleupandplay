@@ -2,19 +2,19 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { Rejected } from "solid-objects"
 
 import { MatchLog } from "../src/actors/match-log.ts"
-import { PlaymatRoom, type PlaymatViewer } from "../src/actors/playmat-room.ts"
+import { GameRoom, type GameViewer } from "../src/actors/game-room.ts"
 import { startTestRuntime, type TestRuntime } from "./support/runtime.ts"
 import { ArchidektRequestError } from "../src/archidekt/client.ts"
-import type { RoomPayload } from "../src/playmat/types.ts"
+import type { RoomPayload } from "../src/game/types.ts"
 
 let harness: TestRuntime
 
-function viewer(sessionId: string, roomCode: string): PlaymatViewer {
+function viewer(sessionId: string, roomCode: string): GameViewer {
   return { sessionId, roomCode }
 }
 
 function roomReference(code: string) {
-  return harness.runtime.ref(PlaymatRoom, code)
+  return harness.runtime.ref(GameRoom, code)
 }
 
 async function createdRoom(options: { code: string; sessionId: string; name?: string }) {
@@ -36,7 +36,7 @@ afterEach(async () => {
   await harness.close()
 })
 
-describe("PlaymatRoom lifecycle", () => {
+describe("GameRoom lifecycle", () => {
   test("creates a room with the creator in seat one", async () => {
     const reference = await createdRoom({ code: "ABC123", sessionId: "session-1" })
     const snapshot = await reference.snapshot({
@@ -108,7 +108,7 @@ describe("PlaymatRoom lifecycle", () => {
   })
 })
 
-describe("PlaymatRoom actions", () => {
+describe("GameRoom actions", () => {
   test("serializes mutations and advances the room version", async () => {
     const reference = await createdRoom({ code: "ABC126", sessionId: "session-1" })
     const invoker = reference.with({ authorizationContext: viewer("session-1", "ABC126") })
@@ -154,7 +154,7 @@ describe("PlaymatRoom actions", () => {
   })
 })
 
-describe("PlaymatRoom observables", () => {
+describe("GameRoom observables", () => {
   test("replays seat dependencies without their values", async () => {
     await createdRoom({ code: "ABC129", sessionId: "session-1" })
 
@@ -177,7 +177,7 @@ describe("PlaymatRoom observables", () => {
   })
 })
 
-describe("PlaymatRoom payloads", () => {
+describe("GameRoom payloads", () => {
   test("projects a different room for each seat", async () => {
     const reference = await createdRoom({ code: "ABC131", sessionId: "session-1" })
     await reference
@@ -206,7 +206,7 @@ describe("PlaymatRoom payloads", () => {
   })
 })
 
-describe("PlaymatRoom deck loading", () => {
+describe("GameRoom deck loading", () => {
   test("loads a deck through an effect and records it in the match log", async () => {
     const reference = await createdRoom({ code: "ABC133", sessionId: "session-1" })
 
@@ -275,7 +275,7 @@ describe("PlaymatRoom deck loading", () => {
   })
 })
 
-describe("PlaymatRoom reminders", () => {
+describe("GameRoom reminders", () => {
   test("arms an idle sweep that closes an open deck search", async () => {
     const reference = await createdRoom({ code: "ABC135", sessionId: "session-1" })
     await reference
@@ -296,7 +296,7 @@ describe("PlaymatRoom reminders", () => {
   })
 })
 
-describe("PlaymatRoom authorization", () => {
+describe("GameRoom authorization", () => {
   test("refuses a call without an authorization context", async () => {
     await expect(
       roomReference("ABC136").createRoom({
@@ -334,7 +334,7 @@ describe("PlaymatRoom authorization", () => {
 
     await expect(
       harness.runtime.subscriptionSnapshot({
-        actorType: PlaymatRoom.actorType,
+        actorType: GameRoom.actorType,
         actorId: "ABC139",
         authorizationContext: viewer("session-9", "ABC139"),
       }),
@@ -342,7 +342,7 @@ describe("PlaymatRoom authorization", () => {
   })
 })
 
-describe("PlaymatRoom operations surface", () => {
+describe("GameRoom operations surface", () => {
   test("exposes only the intended durable operations", async () => {
     expect([...roomReference("ABC140").operations].sort()).toEqual([
       "applyAction",
@@ -379,7 +379,7 @@ async function loadDeck(options: {
 
 async function subscriptionSnapshot(code: string, sessionId: string) {
   return harness.runtime.subscriptionSnapshot({
-    actorType: PlaymatRoom.actorType,
+    actorType: GameRoom.actorType,
     actorId: code,
     authorizationContext: viewer(sessionId, code),
   })
@@ -387,12 +387,12 @@ async function subscriptionSnapshot(code: string, sessionId: string) {
 
 async function payloadFor(code: string, sessionId: string): Promise<RoomPayload> {
   const payloads = await harness.runtime.subscriptionPayloads({
-    actorType: PlaymatRoom.actorType,
+    actorType: GameRoom.actorType,
     actorId: code,
-    payloadNames: ["playmat"],
+    payloadNames: ["game"],
     authorizationContext: viewer(sessionId, code),
   })
   const payload = payloads[0]
-  if (!payload) throw new Error("expected a playmat payload")
+  if (!payload) throw new Error("expected a game payload")
   return payload.payload as unknown as RoomPayload
 }

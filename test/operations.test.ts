@@ -5,20 +5,20 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { sqlite } from "solid-objects/database/sqlite"
 
-import { PlaymatRoom, type PlaymatViewer } from "../src/actors/playmat-room.ts"
-import { createPlaymatApplication } from "../src/runtime.ts"
+import { GameRoom, type GameViewer } from "../src/actors/game-room.ts"
+import { createShuffleApplication } from "../src/runtime.ts"
 import { startTestRuntime, type TestRuntime } from "./support/runtime.ts"
 
 const OPERATOR = { source: "cli" }
 
 let harness: TestRuntime
 
-function viewer(sessionId: string, roomCode: string): PlaymatViewer {
+function viewer(sessionId: string, roomCode: string): GameViewer {
   return { sessionId, roomCode }
 }
 
 async function createdRoom(code: string) {
-  const reference = harness.runtime.ref(PlaymatRoom, code)
+  const reference = harness.runtime.ref(GameRoom, code)
   await reference.with({ authorizationContext: viewer("session-1", code) }).createRoom({
     code,
     roomName: "Kitchen Table",
@@ -104,7 +104,7 @@ describe("reconciliation", () => {
     await harness.runtime.testing.drain()
 
     const page = await harness.runtime.reconciliation.withoutPendingWork({
-      actorType: PlaymatRoom.actorType,
+      actorType: GameRoom.actorType,
       quietForMilliseconds: 0,
       authorizationContext: OPERATOR,
     })
@@ -112,7 +112,7 @@ describe("reconciliation", () => {
     expect(page.items.map((instance) => instance.actorId)).toContain("OPS004")
 
     const repaired = await harness.runtime
-      .ref(PlaymatRoom, "OPS004")
+      .ref(GameRoom, "OPS004")
       .with({ authorizationContext: viewer("session-1", "OPS004") })
       .reconcile()
     expect(repaired).toBe("reconciled")
@@ -122,7 +122,7 @@ describe("reconciliation", () => {
     await createdRoom("OPS005")
 
     const states = await harness.runtime.reconciliation.statesFor({
-      actorType: PlaymatRoom.actorType,
+      actorType: GameRoom.actorType,
       actorIds: ["OPS005"],
       authorizationContext: OPERATOR,
     })
@@ -134,9 +134,9 @@ describe("reconciliation", () => {
 
 describe("state migrations", () => {
   test("upgrades a version one room without retaining revision counters", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "mtg-playmat-migration-"))
+    const directory = mkdtempSync(join(tmpdir(), "shuffleupandplay-migration-"))
     const databasePath = join(directory, "solid-objects.sqlite3")
-    const application = createPlaymatApplication({
+    const application = createShuffleApplication({
       databasePath,
       pollingIntervalMilliseconds: 10,
       archidekt: { deck: async () => ({ name: "", cards: [] }), search: async () => [] },
@@ -178,7 +178,7 @@ describe("state migrations", () => {
          VALUES (?, ?, ?, ?, 1, ?, ?)`,
         [
           "instance-1",
-          PlaymatRoom.actorType,
+          GameRoom.actorType,
           "OLD001",
           JSON.stringify({ room: legacyRoom }),
           now,
@@ -189,7 +189,7 @@ describe("state migrations", () => {
     await database.close()
 
     const snapshot = await application.runtime
-      .ref(PlaymatRoom, "OLD001")
+      .ref(GameRoom, "OLD001")
       .snapshot({ authorizationContext: viewer("session-1", "OLD001") })
 
     expect(snapshot.room?.name).toBe("Legacy Table")
@@ -208,7 +208,7 @@ describe("test helper", () => {
     await harness.runtime.testing.reset()
 
     const snapshot = await harness.runtime
-      .ref(PlaymatRoom, "OPS006")
+      .ref(GameRoom, "OPS006")
       .snapshot({ authorizationContext: viewer("session-1", "OPS006") })
     expect(snapshot.room).toBeNull()
   })

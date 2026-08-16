@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 
-import { parseAction } from "../src/playmat/action.ts"
+import { parseAction } from "../src/game/action.ts"
 
 describe("parseAction", () => {
   test("accepts an action without arguments", () => {

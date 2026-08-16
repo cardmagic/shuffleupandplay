@@ -1,4 +1,4 @@
-import type { PlaymatAction } from "./action.ts"
+import type { GameAction } from "./action.ts"
 import { defaultRandomness, type Randomness } from "./randomness.ts"
 import type { BattlefieldCard, Card, CardCounter, Player, ZoneName } from "./types.ts"
 
@@ -39,7 +39,7 @@ export function buildPlayer(options: BuildPlayerOptions): Player {
 
 export interface ApplyPlayerActionOptions {
   player: Player
-  action: PlaymatAction
+  action: GameAction
   randomness?: Randomness
 }
 
@@ -158,7 +158,7 @@ function moveBattlefieldCard(options: {
 
 function moveCardBetweenZones(options: {
   player: Player
-  action: Extract<PlaymatAction, { type: "moveCardZone" }>
+  action: Extract<GameAction, { type: "moveCardZone" }>
 }): Player {
   const { player, action } = options
   if (action.from === action.to) return player
@@ -186,7 +186,7 @@ function moveCardBetweenZones(options: {
 
 function moveToDeck(options: {
   player: Player
-  action: Extract<PlaymatAction, { type: "moveToDeck" }>
+  action: Extract<GameAction, { type: "moveToDeck" }>
   randomness: Randomness
 }): Player {
   const { player, action, randomness } = options
@@ -203,7 +203,7 @@ function moveToDeck(options: {
 
 function addCounter(options: {
   player: Player
-  action: Extract<PlaymatAction, { type: "addCounter" }>
+  action: Extract<GameAction, { type: "addCounter" }>
   randomness: Randomness
 }): Player {
   const { player, action, randomness } = options
@@ -227,7 +227,7 @@ function addCounter(options: {
 
 function moveCounter(options: {
   player: Player
-  action: Extract<PlaymatAction, { type: "moveCounter" }>
+  action: Extract<GameAction, { type: "moveCounter" }>
 }): Player {
   const { player, action } = options
   return mapCounters({
@@ -242,7 +242,7 @@ function moveCounter(options: {
 
 function updateCounterValue(options: {
   player: Player
-  action: Extract<PlaymatAction, { type: "updateCounterValue" }>
+  action: Extract<GameAction, { type: "updateCounterValue" }>
 }): Player {
   const { player, action } = options
   return mapCounters({

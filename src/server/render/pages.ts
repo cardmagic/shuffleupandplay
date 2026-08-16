@@ -5,8 +5,8 @@ import {
   type ComponentRenderContext,
 } from "./components.ts"
 import { attribute, escapeHtml, jsonAttribute } from "./escape.ts"
-import { PlaymatRoom } from "../../actors/playmat-room.ts"
-import type { RoomPayload } from "../../playmat/types.ts"
+import { GameRoom } from "../../actors/game-room.ts"
+import type { RoomPayload } from "../../game/types.ts"
 
 export type ComponentDeclaration = {
   name: ComponentName
@@ -24,7 +24,7 @@ export function layout(options: { title: string; body: string }): string {
     <title>${escapeHtml(options.title)}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <link rel="stylesheet" href="/assets/application.css" />
-    <script type="module" src="/assets/playmat.js"></script>
+    <script type="module" src="/assets/shuffle.js"></script>
   </head>
   <body>
     ${options.body}
@@ -50,11 +50,11 @@ export function lobbyPage(options: { joinCode: string | null; error: string | nu
       </form>`
 
   return layout({
-    title: "MTG Playmat",
+    title: "Shuffle Up and Play",
     body: `<main class="layout">
   <header class="topbar panel">
     <p class="eyebrow">Gaming table simulator</p>
-    <h1>MTG Playmat</h1>
+    <h1>Shuffle Up and Play</h1>
     <p>Two-player shared table with Archidekt decks, live sync, and manual card control.</p>
   </header>
   ${error}
@@ -76,14 +76,14 @@ export function lobbyPage(options: { joinCode: string | null; error: string | nu
   })
 }
 
-export function playmatPage(options: {
+export function gamePage(options: {
   payload: RoomPayload
   roomCode: string
   seat: number
   shareUrl: string
 }): string {
   const room = options.payload.space
-  if (!room) throw new TypeError("a playmat page needs a projected room")
+  if (!room) throw new TypeError("a game page needs a projected room")
 
   const context: ComponentRenderContext = {
     payload: options.payload,
@@ -94,10 +94,10 @@ export function playmatPage(options: {
   const opponentSeat = options.seat === 1 ? 2 : 1
 
   return layout({
-    title: `MTG Playmat · ${options.roomCode}`,
+    title: `Shuffle Up and Play · ${options.roomCode}`,
     body: `<main class="layout"
-  data-playmat
-  data-actor-type="${attribute(PlaymatRoom.actorType)}"
+  data-game
+  data-actor-type="${attribute(GameRoom.actorType)}"
   data-actor-id="${attribute(options.roomCode)}"
   data-room-version="${room.version}"
   data-current-player-id="${attribute(options.payload.currentPlayerId ?? "")}"
@@ -141,34 +141,34 @@ export function componentDeclarations(seat: number): ComponentDeclaration[] {
       name: "playerControls",
       key: seat,
       observes: [seatObservable(seat)],
-      batch: "playmat",
+      batch: "game",
       strategy: "morph",
     },
     {
       name: "player",
       key: seat,
       observes: [seatObservable(seat)],
-      batch: "playmat",
+      batch: "game",
       strategy: "morph",
     },
     {
       name: "player",
       key: opponentSeat,
       observes: [seatObservable(opponentSeat)],
-      batch: "playmat",
+      batch: "game",
       strategy: "morph",
     },
     {
       name: "librarySearch",
       key: seat,
       observes: [seatObservable(seat)],
-      batch: "playmat",
+      batch: "game",
       strategy: "replace",
     },
     {
       name: "gameResult",
       observes: ["lifeTotals"],
-      batch: "playmat",
+      batch: "game",
       strategy: "replace",
     },
   ]
