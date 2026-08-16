@@ -2,6 +2,7 @@ import {
   SolidObjectsBrowserClient,
   SolidObjectsComponentRegistry,
 } from "/vendor/live/browser/index.js"
+import { dragOffset, dragPosition } from "./drag-math.js"
 import { morph } from "./morph.js"
 
 const game = document.querySelector("[data-game]")
@@ -171,7 +172,7 @@ let drag = null
 function beginDrag(event, game) {
   const palette = event.target.closest("[data-counter-palette]")
   if (palette) {
-    drag = { kind: "counterPalette" }
+    drag = { kind: "counterPalette", ghost: showCounterGhost(event, palette) }
     event.preventDefault()
     return
   }
@@ -184,7 +185,12 @@ function beginDrag(event, game) {
       element: counter,
       instanceId: counter.dataset.instanceId,
       counterId: counter.dataset.counterId,
-      origin: card.getBoundingClientRect(),
+      canvas: card.getBoundingClientRect(),
+      offset: dragOffset({
+        pointer: { x: event.clientX, y: event.clientY },
+        canvas: card.getBoundingClientRect(),
+        card: { left: counter.offsetLeft, top: counter.offsetTop },
+      }),
     }
     counter.setPointerCapture(event.pointerId)
     return
@@ -194,15 +200,17 @@ function beginDrag(event, game) {
   if (!card || event.target.closest("button, .counter-chip")) return
   if (!belongsToCurrentPlayer(card, game)) return
 
-  const canvas = card.closest(".battlefield-canvas")
-  const cardRectangle = card.getBoundingClientRect()
+  const canvas = card.closest(".battlefield-canvas").getBoundingClientRect()
   drag = {
     kind: "card",
     element: card,
     instanceId: card.dataset.instanceId,
-    origin: canvas.getBoundingClientRect(),
-    offsetX: event.clientX - cardRectangle.left,
-    offsetY: event.clientY - cardRectangle.top,
+    canvas,
+    offset: dragOffset({
+      pointer: { x: event.clientX, y: event.clientY },
+      canvas,
+      card: { left: card.offsetLeft, top: card.offsetTop },
+    }),
     startX: event.clientX,
     startY: event.clientY,
     moved: false,
@@ -212,23 +220,51 @@ function beginDrag(event, game) {
 }
 
 function moveDrag(event) {
-  if (!drag || drag.kind === "counterPalette") return
+  if (!drag) return
 
-  const position = dragPosition(event)
+  if (drag.kind === "counterPalette") {
+    moveCounterGhost(drag.ghost, event)
+    return
+  }
+
   if (drag.kind === "card") {
     const travelled = Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY)
     if (!drag.moved && travelled < TAP_SLOP_PIXELS) return
+    if (!drag.moved) drag.element.classList.add("is-dragging")
     drag.moved = true
   }
-  drag.element.style.left = `${position.x}px`
-  drag.element.style.top = `${position.y}px`
+
+  const position = currentDragPosition(event)
+  drag.element.style.left = `${position.left}px`
+  drag.element.style.top = `${position.top}px`
 }
 
-function dragPosition(event) {
-  return {
-    x: Math.max(0, event.clientX - drag.origin.left - (drag.offsetX ?? 18)),
-    y: Math.max(0, event.clientY - drag.origin.top - (drag.offsetY ?? 12)),
-  }
+function currentDragPosition(event) {
+  return dragPosition({
+    pointer: { x: event.clientX, y: event.clientY },
+    canvas: drag.canvas,
+    offset: drag.offset,
+  })
+}
+
+function showCounterGhost(event, palette) {
+  const ghost = document.createElement("div")
+  ghost.className = "counter-ghost"
+  ghost.textContent = palette.textContent?.trim() || "+1/+1"
+  ghost.setAttribute("aria-hidden", "true")
+  document.body.append(ghost)
+  moveCounterGhost(ghost, event)
+  return ghost
+}
+
+function moveCounterGhost(ghost, event) {
+  if (!ghost) return
+  ghost.style.left = `${event.clientX}px`
+  ghost.style.top = `${event.clientY}px`
+}
+
+function removeCounterGhost() {
+  document.querySelector(".counter-ghost")?.remove()
 }
 
 function finishDrag(event, actorId) {
@@ -236,31 +272,38 @@ function finishDrag(event, actorId) {
 
   const current = drag
   drag = null
+  current.element?.classList.remove("is-dragging")
 
   if (current.kind === "counterPalette") {
-    const card = document.elementFromPoint(event.clientX, event.clientY)?.closest(".battlefield-card")
+    removeCounterGhost()
+    const card = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest(".battlefield-card")
     if (!card) return
+
     const rectangle = card.getBoundingClientRect()
     return void sendAction(actorId, {
       type: "addCounter",
       instanceId: card.dataset.instanceId,
-      x: Math.max(0, event.clientX - rectangle.left - 18),
-      y: Math.max(0, event.clientY - rectangle.top - 12),
+      x: Math.max(0, Math.round(event.clientX - rectangle.left - 18)),
+      y: Math.max(0, Math.round(event.clientY - rectangle.top - 12)),
       label: "+1/+1",
     })
   }
 
-  drag = current
-  const position = dragPosition(event)
-  drag = null
+  const position = dragPosition({
+    pointer: { x: event.clientX, y: event.clientY },
+    canvas: current.canvas,
+    offset: current.offset,
+  })
 
   if (current.kind === "counter") {
     return void sendAction(actorId, {
       type: "moveCounter",
       instanceId: current.instanceId,
       counterId: current.counterId,
-      x: position.x,
-      y: position.y,
+      x: position.left,
+      y: position.top,
     })
   }
 
@@ -271,12 +314,14 @@ function finishDrag(event, actorId) {
   void sendAction(actorId, {
     type: "moveBattlefieldCard",
     instanceId: current.instanceId,
-    x: position.x,
-    y: position.y,
+    x: position.left,
+    y: position.top,
   })
 }
 
 function cancelDrag() {
+  drag?.element?.classList.remove("is-dragging")
+  removeCounterGhost()
   drag = null
 }
 

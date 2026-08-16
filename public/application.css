@@ -1374,3 +1374,29 @@ button:disabled,
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- counter token drag ghost ---- */
+
+.counter-ghost {
+  position: fixed;
+  z-index: 90;
+  transform: translate(-50%, -50%) scale(1.08);
+  pointer-events: none;
+  padding: 0.3rem 0.66rem;
+  border-radius: 999px;
+  border: 1px solid rgba(150, 220, 205, 0.7);
+  background: linear-gradient(140deg, rgba(19, 70, 82, 0.96), rgba(14, 46, 56, 0.96));
+  color: #dff3ee;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.5);
+}
+
+.counter-palette-token {
+  cursor: grab;
+  touch-action: none;
+}
+
+.counter-palette-token:active {
+  cursor: grabbing;
+}
