@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
+
 import {
   componentTargetId,
   renderComponent,
@@ -7,6 +11,20 @@ import {
 import { attribute, escapeHtml, jsonAttribute } from "./escape.ts"
 import { GameRoom } from "../../actors/game-room.ts"
 import type { RoomPayload } from "../../game/types.ts"
+
+const PUBLIC_DIRECTORY = resolve(import.meta.dirname, "../../../public")
+const ASSET_NAMES = ["application.css", "shuffle.js"] as const
+
+const ASSET_URLS: Record<string, string> = Object.fromEntries(
+  ASSET_NAMES.map((name) => [name, `/assets/${name}?v=${fingerprint(name)}`]),
+)
+
+function fingerprint(name: string): string {
+  return createHash("sha256")
+    .update(readFileSync(resolve(PUBLIC_DIRECTORY, name)))
+    .digest("hex")
+    .slice(0, 12)
+}
 
 export type ComponentDeclaration = {
   name: ComponentName
@@ -23,8 +41,8 @@ export function layout(options: { title: string; body: string }): string {
     <meta charset="utf-8" />
     <title>${escapeHtml(options.title)}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <link rel="stylesheet" href="/assets/application.css" />
-    <script type="module" src="/assets/shuffle.js"></script>
+    <link rel="stylesheet" href="${ASSET_URLS["application.css"]}" />
+    <script type="module" src="${ASSET_URLS["shuffle.js"]}"></script>
   </head>
   <body>
     ${options.body}

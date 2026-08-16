@@ -32,6 +32,24 @@ function roomCodeOf(payload: RoomPayload): string {
   return code
 }
 
+describe("asset fingerprints", () => {
+  test("stamps every asset url so a deploy invalidates caches", async () => {
+    const client = server.client()
+    const response = await client.fetch("/", { headers: { accept: "text/html" } })
+    const html = await response.text()
+
+    expect(html).toMatch(/\/assets\/application\.css\?v=[a-f0-9]{8,}/)
+    expect(html).toMatch(/\/assets\/shuffle\.js\?v=[a-f0-9]{8,}/)
+  })
+
+  test("still serves an asset that carries a version query", async () => {
+    const client = server.client()
+    const response = await client.fetch("/assets/shuffle.js?v=deadbeef")
+
+    expect(response.status).toBe(200)
+  })
+})
+
 describe("health", () => {
   test("answers the proxy health check without a session", async () => {
     const client = server.client()
