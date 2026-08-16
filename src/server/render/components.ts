@@ -8,7 +8,13 @@ import type {
   RoomPayload,
 } from "../../game/types.ts"
 
-export const COMPONENT_NAMES = ["player", "playerControls", "librarySearch", "gameResult"] as const
+export const COMPONENT_NAMES = [
+  "player",
+  "playerControls",
+  "librarySearch",
+  "gameResult",
+  "tableStatus",
+] as const
 
 export type ComponentName = (typeof COMPONENT_NAMES)[number]
 
@@ -16,6 +22,7 @@ export type ComponentRenderContext = {
   payload: RoomPayload
   roomCode: string
   seat: number
+  shareUrl: string
 }
 
 export function isComponentName(value: unknown): value is ComponentName {
@@ -37,7 +44,27 @@ export function renderComponent(options: {
       return renderLibrarySearch(context)
     case "gameResult":
       return renderGameResult(context)
+    case "tableStatus":
+      return renderTableStatus(context)
   }
+}
+
+function renderTableStatus(context: ComponentRenderContext): string {
+  const room = context.payload.space
+  const opponentSeat = context.seat === 1 ? 2 : 1
+  if (room?.players.some((player) => player.seat === opponentSeat)) return ""
+
+  const shareUrl = `${context.shareUrl}`
+  return `<section class="panel waiting-panel">
+    <h2>Waiting for your opponent</h2>
+    <p>Send the invite link. Opening it fills in the table code automatically, so your opponent only types a name.</p>
+    <div class="waiting-actions">
+      <button type="button" class="primary-action" data-copy-text="${attribute(shareUrl)}">Copy invite link</button>
+      <button type="button" class="secondary-action" data-share-url="${attribute(shareUrl)}" data-share-hidden hidden>Share…</button>
+    </div>
+    <p class="waiting-code">Table code <strong>${escapeHtml(context.roomCode)}</strong></p>
+    <p class="waiting-count">${room?.players.length ?? 1} of 2 players connected</p>
+  </section>`
 }
 
 export function componentTargetId(options: { name: ComponentName; key?: string | number }): string {

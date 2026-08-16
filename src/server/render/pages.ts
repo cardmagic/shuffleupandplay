@@ -270,11 +270,10 @@ export function gamePage(options: {
     payload: options.payload,
     roomCode: options.roomCode,
     seat: options.seat,
+    shareUrl: options.shareUrl,
   }
   const declarations = componentDeclarations(options.seat)
   const opponentSeat = options.seat === 1 ? 2 : 1
-
-  const opponent = room.players.find((player) => player.seat === opponentSeat) ?? null
 
   return layout({
     title: `Shuffle Up and Play · ${escapeHtml(room.name)}`,
@@ -302,7 +301,7 @@ export function gamePage(options: {
     </div>
   </section>
 
-  ${opponent ? "" : waitingForOpponent({ shareUrl: options.shareUrl, roomCode: options.roomCode })}
+  ${componentSlot({ name: "tableStatus", context })}
 
   <div class="board-layout">
     ${componentSlot({ name: "playerControls", key: options.seat, context })}
@@ -400,19 +399,6 @@ function connectionStatus(): string {
   </p>`
 }
 
-function waitingForOpponent(options: { shareUrl: string; roomCode: string }): string {
-  return `<section class="panel waiting-panel" data-waiting-panel>
-    <h2>Waiting for your opponent</h2>
-    <p>Send the invite link. Opening it fills in the table code automatically, so your opponent only types a name.</p>
-    <div class="waiting-actions">
-      <button type="button" class="primary-action" data-copy-text="${attribute(options.shareUrl)}">Copy invite link</button>
-      <button type="button" class="secondary-action" data-share-url="${attribute(options.shareUrl)}" data-share-hidden hidden>Share…</button>
-    </div>
-    <p class="waiting-code">Table code <strong>${escapeHtml(options.roomCode)}</strong></p>
-    <p class="waiting-count"><span data-player-count>1</span> of 2 players connected</p>
-  </section>`
-}
-
 export function componentDeclarations(seat: number): ComponentDeclaration[] {
   const opponentSeat = seat === 1 ? 2 : 1
   const seatObservable = (value: number) => (value === 1 ? "seatOne" : "seatTwo")
@@ -449,6 +435,12 @@ export function componentDeclarations(seat: number): ComponentDeclaration[] {
     {
       name: "gameResult",
       observes: ["lifeTotals"],
+      batch: "game",
+      strategy: "replace",
+    },
+    {
+      name: "tableStatus",
+      observes: [seatObservable(seat), seatObservable(opponentSeat)],
       batch: "game",
       strategy: "replace",
     },

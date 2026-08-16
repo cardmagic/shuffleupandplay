@@ -600,7 +600,12 @@ async function refreshComponents(options: {
     return sendJson({ context, status: 403, body: { error: "You are not a player in this space" } })
   }
 
-  const renderContext: ComponentRenderContext = { payload, roomCode, seat }
+  const renderContext: ComponentRenderContext = {
+    payload,
+    roomCode,
+    seat,
+    shareUrl: new URL(`/tables/${roomCode}`, context.url).toString(),
+  }
   const components = Array.isArray(body.components) ? body.components : []
   const frames = components.flatMap((component) => {
     if (!isRecord(component) || !isComponentName(component.name)) return []
@@ -788,7 +793,7 @@ const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
   "form-action 'self'",
   "script-src 'self'",
-  "style-src 'self' https://fonts.googleapis.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https://cards.scryfall.io https://storage.googleapis.com",
   "connect-src 'self' ws: wss:",

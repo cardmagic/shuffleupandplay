@@ -185,6 +185,7 @@ describe("published browser client", () => {
       "component-librarySearch-1",
       "component-player-1",
       "component-playerControls-1",
+      "component-tableStatus",
     ])
     session.close()
   })

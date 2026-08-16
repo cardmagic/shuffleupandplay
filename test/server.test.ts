@@ -62,6 +62,45 @@ describe("asset fingerprints", () => {
   })
 })
 
+describe("waiting for an opponent", () => {
+  test("shows the waiting panel while the host sits alone", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    expect(html).toContain("Waiting for your opponent")
+  })
+
+  test("drops the waiting panel once the opponent takes a seat", async () => {
+    const alice = server.client()
+    const bob = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+    await bob.fetch(`/api/tables/${code}/join`, jsonRequest({ playerName: "Bob" }))
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    expect(html).not.toContain("Waiting for your opponent")
+  })
+
+  test("refreshes the waiting panel as a component so it can disappear live", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    const declarations = /data-components="([^"]*)"/.exec(html)?.[1] ?? ""
+    expect(declarations).toContain("tableStatus")
+    expect(html).toContain('id="component-tableStatus"')
+  })
+})
+
 describe("idempotency over HTTP", () => {
   test("applies a retried action with the same key only once", async () => {
     const alice = server.client()
@@ -245,6 +284,23 @@ describe("trust and metadata", () => {
 })
 
 describe("security headers", () => {
+  test("allows the inline styles that position cards on the table", async () => {
+    const response = await server.client().fetch("/", { headers: { accept: "text/html" } })
+    const policy = response.headers.get("content-security-policy") ?? ""
+    const styleSrc = /style-src ([^;]*)/.exec(policy)?.[1] ?? ""
+
+    expect(styleSrc).toContain("'unsafe-inline'")
+  })
+
+  test("keeps script-src strict even though styles are inline", async () => {
+    const response = await server.client().fetch("/", { headers: { accept: "text/html" } })
+    const policy = response.headers.get("content-security-policy") ?? ""
+    const scriptSrc = /script-src ([^;]*)/.exec(policy)?.[1] ?? ""
+
+    expect(scriptSrc).not.toContain("'unsafe-inline'")
+    expect(scriptSrc).not.toContain("'unsafe-eval'")
+  })
+
   test("sends a restrictive policy set on every response", async () => {
     const response = await server.client().fetch("/", { headers: { accept: "text/html" } })
 
