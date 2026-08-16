@@ -195,6 +195,7 @@ describe("state migrations", () => {
     expect(snapshot.room?.name).toBe("Legacy Table")
     expect(snapshot.room?.players[0]?.life).toBe(17)
     expect(snapshot).not.toHaveProperty("seatRevisions")
+    expect(snapshot.room?.players[0]?.deckRequestId).toBeNull()
 
     await application.close()
     rmSync(directory, { recursive: true, force: true })

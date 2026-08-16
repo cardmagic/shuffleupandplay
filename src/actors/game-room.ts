@@ -39,11 +39,12 @@ export type DeckResult = {
 type DeckEffectArguments = {
   deckId: string
   sessionId: string
+  deckRequestId: string
 }
 
 export class GameRoom extends Actor {
   static override readonly actorType = "GameRoom"
-  static override readonly stateVersion = 3
+  static override readonly stateVersion = 4
   static override readonly migrations = [
     {
       from: 1,
@@ -58,6 +59,24 @@ export class GameRoom extends Actor {
       to: 3,
       migrate: (state: JsonObject): JsonObject =>
         Object.fromEntries(Object.entries(state).filter(([name]) => name !== "seatRevisions")),
+    },
+    {
+      from: 3,
+      to: 4,
+      migrate: (state: JsonObject): JsonObject => {
+        const room = state.room
+        if (!isRecord(room) || !Array.isArray(room.players)) return state
+
+        return {
+          ...state,
+          room: {
+            ...room,
+            players: room.players.map((player) =>
+              isRecord(player) ? { deckRequestId: null, ...player } : player,
+            ),
+          },
+        }
+      },
     },
   ]
 
@@ -162,10 +181,11 @@ export class GameRoom extends Actor {
   requestDeck(options: { deckId: string; sessionId: string }): "requested" {
     const room = this.#requireRoom()
     const player = this.#requirePlayer({ room, sessionId: options.sessionId })
+    const deckRequestId = randomUUID()
 
-    this.#replacePlayer({ room, player: { ...player, deckStatus: "loading" } })
+    this.#replacePlayer({ room, player: { ...player, deckStatus: "loading", deckRequestId } })
     this.emit("fetchArchidektDeck", {
-      arguments: { deckId: options.deckId, sessionId: options.sessionId },
+      arguments: { deckId: options.deckId, sessionId: options.sessionId, deckRequestId },
       onSuccess: "deckLoaded",
       onFailure: "deckFailed",
     })
@@ -184,6 +204,7 @@ export class GameRoom extends Actor {
 
     const player = playerForSession({ room, sessionId: options.arguments.sessionId })
     if (!player) return
+    if (player.deckRequestId !== options.arguments.deckRequestId) return
 
     this.#replacePlayer({
       room,
@@ -192,6 +213,7 @@ export class GameRoom extends Actor {
         life: STARTING_LIFE,
         deckName: result.deckName,
         deckStatus: "loaded",
+        deckRequestId: null,
         library: result.cards,
         hand: [],
         battlefield: [],
@@ -213,8 +235,9 @@ export class GameRoom extends Actor {
 
     const player = playerForSession({ room, sessionId: options.arguments.sessionId })
     if (!player || player.deckStatus !== "loading") return
+    if (player.deckRequestId !== options.arguments.deckRequestId) return
 
-    this.#replacePlayer({ room, player: { ...player, deckStatus: "failed" } })
+    this.#replacePlayer({ room, player: { ...player, deckStatus: "failed", deckRequestId: null } })
     this.#log({ event: "deckFailed", detail: String(options.error.message ?? "unknown") })
   }
 
@@ -317,4 +340,8 @@ function normalizedName(options: {
 
   const trimmed = options.value.trim()
   return trimmed.length === 0 ? options.fallback : trimmed.slice(0, options.maximumLength)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

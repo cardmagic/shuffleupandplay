@@ -273,6 +273,62 @@ describe("GameRoom deck loading", () => {
     expect(snapshot.room?.players[1]?.deckName).toBe("Deck 66")
     expect(harness.instrumentation).toContain("solid_objects.effect.failed")
   })
+
+  test("ignores a success callback from a superseded deck request", async () => {
+    const reference = await createdRoom({ code: "ABC140", sessionId: "session-1" })
+    const context = { authorizationContext: viewer("session-1", "ABC140") }
+
+    await reference.with(context).requestDeck({ deckId: "55", sessionId: "session-1" })
+    const first = await reference.snapshot(context)
+    const supersededRequestId = first.room?.players[0]?.deckRequestId ?? ""
+    expect(supersededRequestId).not.toBe("")
+
+    await reference.with(context).requestDeck({ deckId: "66", sessionId: "session-1" })
+    await harness.runtime.testing.drain()
+
+    const current = await reference.snapshot(context)
+    expect(current.room?.players[0]?.deckName).toBe("Deck 66")
+
+    await reference.with(context).deckLoaded({
+      effectId: "superseded-effect",
+      arguments: {
+        deckId: "55",
+        sessionId: "session-1",
+        deckRequestId: supersededRequestId,
+      },
+      result: { deckName: "Deck 55", cards: [] },
+    })
+
+    const settled = await reference.snapshot(context)
+    expect(settled.room?.players[0]?.deckName).toBe("Deck 66")
+    expect(settled.room?.players[0]?.deckStatus).toBe("loaded")
+  })
+
+  test("ignores a failure callback from a superseded deck request", async () => {
+    const reference = await createdRoom({ code: "ABC141", sessionId: "session-1" })
+    const context = { authorizationContext: viewer("session-1", "ABC141") }
+
+    await reference.with(context).requestDeck({ deckId: "55", sessionId: "session-1" })
+    const first = await reference.snapshot(context)
+    const supersededRequestId = first.room?.players[0]?.deckRequestId ?? ""
+
+    await reference.with(context).requestDeck({ deckId: "66", sessionId: "session-1" })
+    await harness.runtime.testing.drain()
+
+    await reference.with(context).deckFailed({
+      effectId: "superseded-effect",
+      arguments: {
+        deckId: "55",
+        sessionId: "session-1",
+        deckRequestId: supersededRequestId,
+      },
+      error: { message: "Archidekt is down" },
+    })
+
+    const settled = await reference.snapshot(context)
+    expect(settled.room?.players[0]?.deckStatus).toBe("loaded")
+    expect(settled.room?.players[0]?.deckName).toBe("Deck 66")
+  })
 })
 
 describe("GameRoom reminders", () => {

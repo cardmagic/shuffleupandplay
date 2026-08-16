@@ -62,6 +62,40 @@ describe("asset fingerprints", () => {
   })
 })
 
+describe("invite links", () => {
+  test("honours the forwarded protocol so the invite link stays https", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, {
+        headers: { accept: "text/html", "x-forwarded-proto": "https" },
+      })
+    ).text()
+
+    const shareUrl = /data-copy-text="([^"]+)"/.exec(html)?.[1] ?? ""
+    expect(shareUrl).toMatch(/^https:\/\//)
+    expect(shareUrl).toContain(`/tables/${code}`)
+  })
+
+  test("uses the configured public origin when one is set", async () => {
+    process.env.SHUFFLE_PUBLIC_ORIGIN = "https://example.test"
+    try {
+      const alice = server.client()
+      const code = roomCodeOf(await createRoom(alice))
+
+      const html = await (
+        await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+      ).text()
+
+      const shareUrl = /data-copy-text="([^"]+)"/.exec(html)?.[1] ?? ""
+      expect(shareUrl).toBe(`https://example.test/tables/${code}`)
+    } finally {
+      delete process.env.SHUFFLE_PUBLIC_ORIGIN
+    }
+  })
+})
+
 describe("product language", () => {
   const FRAMEWORK_TERMS = /solid.?objects|data-actor|\bdemo\b|example application|framework/i
 

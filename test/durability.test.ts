@@ -199,7 +199,7 @@ describe("terminal failures", () => {
       .with({ authorizationContext: viewer("session-1", "DUR011") })
       .deckLoaded({
         effectId: "made-up",
-        arguments: { deckId: "55", sessionId: "session-1" },
+        arguments: { deckId: "55", sessionId: "session-1", deckRequestId: "made-up" },
         result: null,
       })
 

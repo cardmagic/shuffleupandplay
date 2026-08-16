@@ -182,7 +182,7 @@ async function handle(options: {
   requestSession: RequestSession
 }): Promise<void> {
   const { request, response, application, runtime, requestSession } = options
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
+  const url = new URL(request.url ?? "/", requestOrigin(request))
 
   const context: RequestContext = {
     request,
@@ -251,6 +251,19 @@ async function route(options: {
   if (prefersHtml(context)) return sendHtml({ context, status: 404, body: notFoundPage() })
 
   sendJson({ context, status: 404, body: { error: "Not found" } })
+}
+
+function requestOrigin(request: IncomingMessage): string {
+  const configured = process.env.SHUFFLE_PUBLIC_ORIGIN
+  if (configured) return configured
+
+  const host = request.headers.host ?? "localhost"
+  const forwarded = String(request.headers["x-forwarded-proto"] ?? "")
+    .split(",")[0]
+    ?.trim()
+  const protocol = forwarded === "https" || forwarded === "http" ? forwarded : "http"
+
+  return `${protocol}://${host}`
 }
 
 function sendManifest(context: RequestContext): void {

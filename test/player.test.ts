@@ -269,6 +269,7 @@ describe("buildPlayer", () => {
       life: 20,
       deckName: null,
       deckStatus: "idle",
+      deckRequestId: null,
       library: [],
       hand: [],
       battlefield: [],

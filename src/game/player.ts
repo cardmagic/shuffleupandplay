@@ -31,6 +31,7 @@ export function buildPlayer(options: BuildPlayerOptions): Player {
     life: STARTING_LIFE,
     deckName: null,
     deckStatus: "idle",
+    deckRequestId: null,
     library: [],
     hand: [],
     battlefield: [],

@@ -41,6 +41,7 @@ export type Player = {
   life: number
   deckName: string | null
   deckStatus: DeckStatus
+  deckRequestId: string | null
   library: Card[]
   hand: Card[]
   battlefield: BattlefieldCard[]
