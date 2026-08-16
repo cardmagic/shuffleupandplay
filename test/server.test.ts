@@ -33,20 +33,128 @@ function roomCodeOf(payload: RoomPayload): string {
 }
 
 describe("asset fingerprints", () => {
-  test("stamps every asset url so a deploy invalidates caches", async () => {
+  test("stamps every asset filename so a deploy invalidates caches", async () => {
     const client = server.client()
     const response = await client.fetch("/", { headers: { accept: "text/html" } })
     const html = await response.text()
 
-    expect(html).toMatch(/\/assets\/application\.css\?v=[a-f0-9]{8,}/)
-    expect(html).toMatch(/\/assets\/shuffle\.js\?v=[a-f0-9]{8,}/)
+    expect(html).toMatch(/\/assets\/application\.[a-f0-9]{12}\.css/)
+    expect(html).toMatch(/\/assets\/shuffle\.[a-f0-9]{12}\.js/)
   })
 
-  test("still serves an asset that carries a version query", async () => {
+  test("serves a fingerprinted asset with an immutable cache and no cookie", async () => {
     const client = server.client()
-    const response = await client.fetch("/assets/shuffle.js?v=deadbeef")
+    const html = await (await client.fetch("/", { headers: { accept: "text/html" } })).text()
+    const asset = /\/assets\/shuffle\.[a-f0-9]{12}\.js/.exec(html)?.[0] ?? ""
+
+    const response = await client.fetch(asset)
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    expect(response.headers.getSetCookie()).toEqual([])
+  })
+
+  test("serves an unfingerprinted asset without creating a session", async () => {
+    const response = await server.client().fetch("/assets/shuffle.js")
+
+    expect(response.status).toBe(200)
+    expect(response.headers.getSetCookie()).toEqual([])
+  })
+})
+
+describe("product language", () => {
+  const FRAMEWORK_TERMS = /solid.?objects|data-actor|\bdemo\b|example application|framework/i
+
+  test("keeps framework and demo terminology out of the lobby", async () => {
+    const html = await (
+      await server.client().fetch("/", { headers: { accept: "text/html" } })
+    ).text()
+
+    expect(html).not.toMatch(FRAMEWORK_TERMS)
+    expect(html).toContain("Play Magic remotely with an Archidekt deck")
+    expect(html.match(/<h1[\s>]/g)).toHaveLength(1)
+  })
+
+  test("keeps framework terminology and versions off the table page", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    expect(html).not.toMatch(FRAMEWORK_TERMS)
+    expect(html).not.toMatch(/version\s*<?span?[^>]*>?\s*\d/i)
+    expect(html.match(/<h1[\s>]/g)).toHaveLength(1)
+    expect(html).toContain("Table code")
+  })
+
+  test("marks a private table page noindex and a public page indexable", async () => {
+    const alice = server.client()
+    const code = roomCodeOf(await createRoom(alice))
+
+    const table = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+    const lobby = await (
+      await server.client().fetch("/", { headers: { accept: "text/html" } })
+    ).text()
+
+    expect(table).toContain('content="noindex, nofollow"')
+    expect(table).not.toContain(`og:title" content="${code}`)
+    expect(lobby).toContain('content="index, follow"')
+  })
+})
+
+describe("trust and metadata", () => {
+  test("serves the manifest, robots and security policy", async () => {
+    const manifest = await server.client().fetch("/manifest.webmanifest")
+    const robots = await server.client().fetch("/robots.txt")
+    const security = await server.client().fetch("/.well-known/security.txt")
+
+    expect(manifest.status).toBe(200)
+    expect(await manifest.json()).toMatchObject({ name: "Shuffle Up and Play" })
+    expect(await robots.text()).toContain("Disallow: /tables/")
+    expect(security.status).toBe(200)
+  })
+
+  test("serves privacy and credits with the required attribution", async () => {
+    const privacy = await (
+      await server.client().fetch("/privacy", { headers: { accept: "text/html" } })
+    ).text()
+    const credits = await (
+      await server.client().fetch("/credits", { headers: { accept: "text/html" } })
+    ).text()
+
+    expect(privacy).toContain("no account")
+    expect(credits).toContain("Archidekt")
+    expect(credits).toContain("Scryfall")
+    expect(credits).toContain("Fan Content Policy")
+    expect(credits).toContain("not approved or endorsed by Wizards")
+  })
+
+  test("answers an unknown page with a branded 404", async () => {
+    const response = await server
+      .client()
+      .fetch("/not-a-page", { headers: { accept: "text/html" } })
+    const html = await response.text()
+
+    expect(response.status).toBe(404)
+    expect(html).toContain("That page is not here")
+    expect(html).toContain("Go to the lobby")
+  })
+})
+
+describe("security headers", () => {
+  test("sends a restrictive policy set on every response", async () => {
+    const response = await server.client().fetch("/", { headers: { accept: "text/html" } })
+
+    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'")
+    expect(response.headers.get("content-security-policy")).toContain("cards.scryfall.io")
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+    expect(response.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin")
+    expect(response.headers.get("permissions-policy")).toContain("camera=()")
+    expect(response.headers.get("x-frame-options")).toBe("DENY")
   })
 })
 
@@ -173,7 +281,7 @@ describe("space lifecycle over HTTP", () => {
 
     expect(created.status).toBe(303)
     const location = created.headers.get("location") ?? ""
-    expect(location).toMatch(/^\/spaces\/[A-Z0-9]{6}$/)
+    expect(location).toMatch(/^\/tables\/[A-Z0-9]{6}$/)
 
     const page = await alice.fetch(location, { headers: { accept: "text/html" } })
     const html = await page.text()
@@ -189,14 +297,14 @@ describe("space lifecycle over HTTP", () => {
       formRequest({ playerName: "Bob", spaceCode: code }),
     )
     expect(joined.status).toBe(303)
-    expect(joined.headers.get("location")).toBe(`/spaces/${code}`)
+    expect(joined.headers.get("location")).toBe(`/tables/${code}`)
   })
 
   test("sends a stranger back to the lobby", async () => {
     const code = roomCodeOf(await createRoom(server.client()))
     const stranger = server.client()
 
-    const response = await stranger.fetch(`/spaces/${code}`, { headers: { accept: "text/html" } })
+    const response = await stranger.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
 
     expect(response.status).toBe(303)
     expect(response.headers.get("location")).toBe(`/?join=${code}`)
@@ -334,7 +442,7 @@ describe("hidden information over HTTP", () => {
       jsonRequest({ action: { type: "drawCard", count: 2 } }),
     )
 
-    const page = await bob.fetch(`/spaces/${code}`, { headers: { accept: "text/html" } })
+    const page = await bob.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
     const html = await page.text()
 
     expect(html).toContain("Alice")
@@ -450,8 +558,8 @@ describe("component refresh endpoint", () => {
 })
 
 describe("static assets", () => {
-  test("serves the browser entry point of the published package", async () => {
-    const response = await server.client().fetch("/vendor/solid-objects/browser/index.js")
+  test("serves the live client from a neutral vendor path", async () => {
+    const response = await server.client().fetch("/vendor/live/browser/index.js")
     const body = await response.text()
 
     expect(response.status).toBe(200)

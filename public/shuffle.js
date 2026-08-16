@@ -1,14 +1,14 @@
 import {
   SolidObjectsBrowserClient,
   SolidObjectsComponentRegistry,
-} from "/vendor/solid-objects/browser/index.js"
+} from "/vendor/live/browser/index.js"
 
 const game = document.querySelector("[data-game]")
 if (game) start(game)
 
 function start(game) {
-  const actorType = game.dataset.actorType
-  const actorId = game.dataset.actorId
+  const actorType = game.dataset.tableType
+  const actorId = game.dataset.tableCode
   const declarations = JSON.parse(game.dataset.components)
 
   const registry = new SolidObjectsComponentRegistry({
@@ -29,7 +29,7 @@ function start(game) {
       if (component.strategy === "morph") return morph(target, rendered)
       target.innerHTML = rendered
     },
-    onError: () => setConnectionState("Refresh failed; retrying on the next change"),
+    onError: () => showToast("The table could not refresh. It retries on the next change."),
   })
 
   for (const declaration of declarations) {
@@ -45,23 +45,30 @@ function start(game) {
     })
   }
 
-  const url = new URL("/solid-objects", window.location.href)
+  const url = new URL("/live", window.location.href)
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
   url.searchParams.set("roomCode", actorId)
 
   const client = new SolidObjectsBrowserClient({
     url,
+    createWebSocket: (target) => {
+      const socket = new WebSocket(target)
+      socket.addEventListener("open", () => setConnectionState("connected"))
+      socket.addEventListener("close", () => setConnectionState("reconnecting"))
+      return socket
+    },
     onInvalidation: (envelope) => {
-      applyVersion(envelope.observables.version)
-      setConnectionState("Live via Solid Objects")
+      setConnectionState("connected")
       registry.invalidate(envelope)
     },
-    onPayload: (envelope) => {
-      if (envelope.name !== "game") return
-      applyVersion(envelope.payload?.space?.version)
+    onPayload: () => {
+      setConnectionState("connected")
     },
-    onError: () => setConnectionState("Reconnecting…"),
+    onError: () => setConnectionState("reconnecting"),
   })
+
+  window.addEventListener("offline", () => setConnectionState("offline"))
+  window.addEventListener("online", () => setConnectionState("reconnecting"))
 
   client.subscribe({ actorType, actorId, payloads: ["game"] })
   client.connect()
@@ -79,18 +86,40 @@ function targetIdFor(declaration) {
     : `component-${declaration.name}-${declaration.key}`
 }
 
-function applyVersion(version) {
-  if (typeof version !== "number") return
-  const game = document.querySelector("[data-game]")
-  if (!game) return
-  game.dataset.roomVersion = String(version)
-  const label = game.querySelector("[data-room-version-label]")
-  if (label) label.textContent = String(version)
+const CONNECTION_LABELS = {
+  connecting: "Connecting…",
+  connected: "Connected",
+  reconnecting: "Reconnecting…",
+  offline: "Offline — actions are unavailable",
 }
 
-function setConnectionState(message) {
-  const element = document.querySelector("[data-connection-state]")
-  if (element) element.textContent = message
+let connectionState = "connecting"
+
+function setConnectionState(state) {
+  if (!CONNECTION_LABELS[state] || state === connectionState) return
+
+  const previous = connectionState
+  connectionState = state
+
+  const element = document.querySelector("[data-connection-status]")
+  if (element) {
+    element.dataset.state = state
+    const label = element.querySelector("[data-connection-label]")
+    if (label) label.textContent = CONNECTION_LABELS[state]
+  }
+
+  if (state === "connected" && previous !== "connecting") showToast("Connection restored")
+}
+
+function showToast(message) {
+  const region = document.querySelector("[data-toast-region]")
+  if (!region) return
+
+  const toast = document.createElement("p")
+  toast.className = "toast"
+  toast.textContent = message
+  region.append(toast)
+  window.setTimeout(() => toast.remove(), 4000)
 }
 
 function morph(target, rendered) {
@@ -124,13 +153,14 @@ function wireActions(game, actorId) {
 }
 
 async function sendAction(actorId, action) {
-  const response = await fetch(`/api/spaces/${actorId}/actions`, {
+  const response = await fetch(`/api/tables/${actorId}/actions`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "content-type": "application/json", prefer: "respond-async" },
     body: JSON.stringify({ action }),
   })
-  if (!response.ok) setConnectionState("The last action was refused")
+  if (!response.ok) showToast("That action was not accepted. Try again.")
+  return response.ok
 }
 
 const TAP_SLOP_PIXELS = 10
@@ -378,7 +408,7 @@ function safeImageUrl(value) {
 async function loadDeck(actorId, deckId) {
   if (!deckId) return
 
-  const response = await fetch(`/api/spaces/${actorId}/deck`, {
+  const response = await fetch(`/api/tables/${actorId}/deck`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "content-type": "application/json", accept: "application/json" },

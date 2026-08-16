@@ -33,7 +33,18 @@ import {
   renderComponent,
   type ComponentRenderContext,
 } from "./render/components.ts"
-import { lobbyPage, gamePage } from "./render/pages.ts"
+import {
+  ASSET_URLS,
+  creditsPage,
+  gamePage,
+  isLobbyErrorCode,
+  lobbyPage,
+  notFoundPage,
+  privacyPage,
+  PRODUCT_DESCRIPTION,
+  SITE_ORIGIN,
+  type LobbyErrorCode,
+} from "./render/pages.ts"
 import {
   generateSessionId,
   readSessionCookie,
@@ -53,11 +64,10 @@ const REJECTION_STATUSES: Record<string, number> = {
 
 const STATIC_ROOTS: Record<string, string> = {
   "/assets/": resolve(import.meta.dirname, "../../public"),
-  "/vendor/solid-objects/": resolve(
-    import.meta.dirname,
-    "../../node_modules/solid-objects/dist",
-  ),
+  "/vendor/live/": resolve(import.meta.dirname, "../../node_modules/solid-objects/dist"),
 }
+
+const FINGERPRINT_PATTERN = /^(.*)\.[a-f0-9]{12}(\.[a-z0-9]+)$/
 
 const CONTENT_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -99,33 +109,50 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     : undefined
 
   const server = createServer((request, response) => {
-    const healthMethod = request.method === "GET" || request.method === "HEAD"
-    if (healthMethod && (request.url ?? "").split("?")[0] === "/up") {
+    const method = request.method ?? "GET"
+    const pathname = (request.url ?? "/").split("?")[0] ?? "/"
+    const readMethod = method === "GET" || method === "HEAD"
+
+    applySecurityHeaders({ response, secureCookies })
+
+    if (readMethod && pathname === "/up") {
       response.writeHead(200, { "content-type": "text/plain; charset=utf-8" })
       response.end("OK")
       return
     }
 
-    const requestSession = resolveRequestSession({ request, secret, secureCookies })
-    requestSessions.set(request, requestSession)
-    if (requestSession.setCookies.length > 0) {
-      response.setHeader("set-cookie", requestSession.setCookies)
-    }
-
-    const next = (error?: unknown) => {
-      if (error) {
-        respondToUnhandledError({ response, error })
-        return
-      }
-      handle({ request, response, application, runtime, requestSession }).catch((handleError) => {
-        respondToUnhandledError({ response, error: handleError })
+    if (readMethod) {
+      void serveStaticAsset({ method, pathname, response }).then((served) => {
+        if (served) return
+        withSession()
       })
-    }
-    if (dashboardHandler) {
-      dashboardHandler(request, response, next)
       return
     }
-    next()
+
+    withSession()
+
+    function withSession(): void {
+      const requestSession = resolveRequestSession({ request, secret, secureCookies })
+      requestSessions.set(request, requestSession)
+      if (requestSession.setCookies.length > 0) {
+        response.setHeader("set-cookie", requestSession.setCookies)
+      }
+
+      const next = (error?: unknown) => {
+        if (error) {
+          respondToUnhandledError({ response, error })
+          return
+        }
+        handle({ request, response, application, runtime, requestSession }).catch((handleError) => {
+          respondToUnhandledError({ response, error: handleError })
+        })
+      }
+      if (dashboardHandler) {
+        dashboardHandler(request, response, next)
+        return
+      }
+      next()
+    }
   })
 
   const realtime = attachRealtime({ server, runtime, secret })
@@ -166,8 +193,6 @@ async function handle(options: {
     setCookies: requestSession.setCookies,
   }
 
-  if (await serveStatic(context)) return
-
   try {
     await route({ context, application, runtime })
   } catch (error) {
@@ -185,11 +210,24 @@ async function route(options: {
   const method = context.method
 
   if (method === "GET" && path === "/") return showLobby(context)
+  if (method === "GET" && path === "/manifest.webmanifest") return sendManifest(context)
+  if (method === "GET" && path === "/robots.txt") return sendRobots(context)
+  if (method === "GET" && path === "/.well-known/security.txt") return sendSecurityTxt(context)
+  if (method === "GET" && path === "/privacy") return showPrivacy(context)
+  if (method === "GET" && path === "/credits") return showCredits(context)
+
   if (method === "GET" && path.startsWith("/spaces/")) {
-    return showGame({ context, runtime, roomCode: path.slice("/spaces/".length) })
+    return sendRedirect({ context, location: `/tables/${path.slice("/spaces/".length)}` })
   }
-  if (method === "POST" && path === "/api/spaces") return createSpace({ context, runtime })
-  if (method === "POST" && path === "/api/spaces/join") return joinByCode({ context, runtime })
+  if (method === "GET" && path.startsWith("/tables/")) {
+    return showGame({ context, runtime, roomCode: path.slice("/tables/".length) })
+  }
+  if (method === "POST" && (path === "/api/tables" || path === "/api/spaces")) {
+    return createSpace({ context, runtime })
+  }
+  if (method === "POST" && (path === "/api/tables/join" || path === "/api/spaces/join")) {
+    return joinByCode({ context, runtime })
+  }
   if (method === "GET" && path === "/api/archidekt/search") {
     return searchDecks({ context, application })
   }
@@ -197,7 +235,8 @@ async function route(options: {
     return refreshComponents({ context, runtime })
   }
 
-  const spaceMatch = /^\/api\/spaces\/([A-Za-z0-9]{1,6})\/(join|state|deck|actions)$/.exec(path)
+  const spaceMatch =
+    /^\/api\/(?:tables|spaces)\/([A-Za-z0-9]{1,6})\/(join|state|deck|actions)$/.exec(path)
   if (spaceMatch) {
     const roomCode = normalizeRoomCode(spaceMatch[1])
     const segment = spaceMatch[2]
@@ -209,16 +248,82 @@ async function route(options: {
     }
   }
 
+  if (prefersHtml(context)) return sendHtml({ context, status: 404, body: notFoundPage() })
+
   sendJson({ context, status: 404, body: { error: "Not found" } })
 }
 
+function sendManifest(context: RequestContext): void {
+  const manifest = {
+    name: "Shuffle Up and Play",
+    short_name: "Shuffle Up",
+    description: PRODUCT_DESCRIPTION,
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    background_color: "#0d1320",
+    theme_color: "#0d1320",
+    icons: [
+      { src: ASSET_URLS["icon-192.png"], sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: ASSET_URLS["icon-512.png"], sizes: "512x512", type: "image/png", purpose: "any" },
+    ],
+  }
+
+  context.response.writeHead(200, {
+    "content-type": "application/manifest+json; charset=utf-8",
+    "cache-control": "public, max-age=3600",
+  })
+  context.response.end(JSON.stringify(manifest))
+}
+
+function sendRobots(context: RequestContext): void {
+  const body = ["User-agent: *", "Disallow: /tables/", "Disallow: /api/", "Allow: /", ""].join("\n")
+
+  context.response.writeHead(200, {
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "public, max-age=3600",
+  })
+  context.response.end(body)
+}
+
+function sendSecurityTxt(context: RequestContext): void {
+  const body = [
+    `Contact: ${SITE_ORIGIN}/credits`,
+    "Preferred-Languages: en",
+    `Canonical: ${SITE_ORIGIN}/.well-known/security.txt`,
+    "",
+  ].join("\n")
+
+  context.response.writeHead(200, {
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "public, max-age=3600",
+  })
+  context.response.end(body)
+}
+
+function showPrivacy(context: RequestContext): void {
+  sendHtml({ context, status: 200, body: privacyPage() })
+}
+
+function showCredits(context: RequestContext): void {
+  sendHtml({ context, status: 200, body: creditsPage() })
+}
+
+const LOBBY_ERROR_CODES: Record<string, LobbyErrorCode | undefined> = {
+  roomNotFound: "tableNotFound",
+  roomFull: "tableFull",
+  notAPlayer: "sessionLost",
+}
+
 function showLobby(context: RequestContext): void {
+  const supplied = context.url.searchParams.get("error") ?? ""
+
   sendHtml({
     context,
     status: 200,
     body: lobbyPage({
       joinCode: context.url.searchParams.get("join"),
-      error: context.url.searchParams.get("error"),
+      error: isLobbyErrorCode(supplied) ? { code: supplied } : null,
     }),
   })
 }
@@ -246,7 +351,7 @@ async function showGame(options: {
       payload,
       roomCode,
       seat,
-      shareUrl: new URL(`/spaces/${roomCode}`, context.url).toString(),
+      shareUrl: new URL(`/tables/${roomCode}`, context.url).toString(),
     }),
   })
 }
@@ -282,7 +387,7 @@ async function tryCreateRoom(options: {
       .with({ authorizationContext: viewerFor({ context, roomCode }) })
       .createRoom({
         code: roomCode,
-        roomName: String(body.spaceName ?? ""),
+        roomName: String(body.tableName ?? body.spaceName ?? ""),
         playerName: String(body.playerName ?? ""),
         sessionId: context.sessionId,
       })
@@ -299,7 +404,7 @@ async function joinByCode(options: {
 }): Promise<void> {
   const { context, runtime } = options
   const body = await readBody(context.request)
-  const roomCode = normalizeRoomCode(body.spaceCode)
+  const roomCode = normalizeRoomCode(body.tableCode ?? body.spaceCode)
   if (roomCode.length === 0) {
     return sendJson({ context, status: 404, body: { error: "Space not found" } })
   }
@@ -372,7 +477,7 @@ async function loadDeck(options: {
     .with({ authorizationContext: viewerFor(options) })
     .requestDeck({ deckId, sessionId: context.sessionId })
 
-  if (prefersHtml(context)) return sendRedirect({ context, location: `/spaces/${roomCode}` })
+  if (prefersHtml(context)) return sendRedirect({ context, location: `/tables/${roomCode}` })
 
   sendJson({ context, status: 202, body: { status: "requested", deckId } })
 }
@@ -468,7 +573,7 @@ async function respondWithRoom(options: {
     return sendJson({ context, status: 404, body: { error: "Space not found" } })
   }
 
-  if (prefersHtml(context)) return sendRedirect({ context, location: `/spaces/${roomCode}` })
+  if (prefersHtml(context)) return sendRedirect({ context, location: `/tables/${roomCode}` })
 
   sendJson({ context, status: options.status, body: payload })
 }
@@ -511,11 +616,9 @@ function respondToError(options: { context: RequestContext; error: unknown }): v
   const { context, error } = options
   if (error instanceof Rejected) {
     const status = REJECTION_STATUSES[error.code] ?? 422
-    if (prefersHtml(context) && (error.code === "roomNotFound" || error.code === "roomFull")) {
-      return sendRedirect({
-        context,
-        location: `/?error=${encodeURIComponent(error.message)}`,
-      })
+    const lobbyCode = LOBBY_ERROR_CODES[error.code]
+    if (prefersHtml(context) && lobbyCode) {
+      return sendRedirect({ context, location: `/?error=${lobbyCode}` })
     }
     return sendJson({ context, status, body: { error: error.message, code: error.code } })
   }
@@ -615,17 +718,63 @@ function respondToUnhandledError(options: { response: ServerResponse; error: unk
   options.response.end(JSON.stringify({ error: describeError(options.error) }))
 }
 
-async function serveStatic(context: RequestContext): Promise<boolean> {
-  if (context.method !== "GET") return false
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: https://cards.scryfall.io https://storage.googleapis.com",
+  "connect-src 'self' ws: wss:",
+  "manifest-src 'self'",
+].join("; ")
 
-  const entry = Object.entries(STATIC_ROOTS).find(([prefix]) =>
-    context.url.pathname.startsWith(prefix),
-  )
+const PERMISSIONS_POLICY = [
+  "accelerometer=()",
+  "camera=()",
+  "geolocation=()",
+  "gyroscope=()",
+  "microphone=()",
+  "payment=()",
+  "usb=()",
+].join(", ")
+
+export function applySecurityHeaders(options: {
+  response: ServerResponse
+  secureCookies: boolean
+}): void {
+  const { response } = options
+  response.setHeader("content-security-policy", CONTENT_SECURITY_POLICY)
+  response.setHeader("x-content-type-options", "nosniff")
+  response.setHeader("referrer-policy", "strict-origin-when-cross-origin")
+  response.setHeader("permissions-policy", PERMISSIONS_POLICY)
+  response.setHeader("x-frame-options", "DENY")
+  response.setHeader("cross-origin-opener-policy", "same-origin")
+  if (options.secureCookies) {
+    response.setHeader("strict-transport-security", "max-age=31536000; includeSubDomains; preload")
+  }
+}
+
+export async function serveStaticAsset(options: {
+  method: string
+  pathname: string
+  response: ServerResponse
+}): Promise<boolean> {
+  const { method, pathname, response } = options
+  if (method !== "GET" && method !== "HEAD") return false
+
+  const entry = Object.entries(STATIC_ROOTS).find(([prefix]) => pathname.startsWith(prefix))
   if (!entry) return false
 
   const [prefix, root] = entry
-  const relative = normalize(context.url.pathname.slice(prefix.length))
-  if (relative.startsWith("..")) return false
+  const requested = normalize(pathname.slice(prefix.length))
+  if (requested.startsWith("..")) return false
+
+  const match = FINGERPRINT_PATTERN.exec(requested)
+  const relative = match ? `${match[1]}${match[2]}` : requested
 
   const filePath = join(root, relative)
   try {
@@ -635,11 +784,18 @@ async function serveStatic(context: RequestContext): Promise<boolean> {
     return false
   }
 
-  context.response.writeHead(200, {
+  response.writeHead(200, {
     "content-type": CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream",
-    "cache-control": "no-cache",
+    "cache-control": match
+      ? "public, max-age=31536000, immutable"
+      : "public, max-age=300, must-revalidate",
   })
-  createReadStream(filePath).pipe(context.response)
+  if (method === "HEAD") {
+    response.end()
+    return true
+  }
+
+  createReadStream(filePath).pipe(response)
   return true
 }
 

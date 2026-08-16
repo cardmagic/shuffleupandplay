@@ -1,41 +1,26 @@
 # Shuffle Up and Play
 
-A two-player Magic: The Gathering game for Node.js. It is a complete example
-application for the [`solid-objects`](https://www.npmjs.com/package/solid-objects)
-npm package.
+Play Magic remotely with an Archidekt deck. Draw, tap, move, and track cards on a
+shared two-player table.
 
-The app uses Node 24, TypeScript, SQLite, `node:http`, and `ws`. It adds no web
-framework and no bundler. Two browsers share one room. Each browser holds one
-seat, and each seat sees only its own cards.
+Create a table, send the invite link, load your decks, and play. No account, no
+install, no rules engine. You move your own cards, exactly as you would across a
+kitchen table.
 
-## What this example demonstrates
+Live at [shuffleupandplay.com](https://shuffleupandplay.com).
 
-Solid Objects gives you stateful, realtime objects on a database. This app
-exercises the full feature set:
+## How it works
 
-- **Actors own state.** One room code addresses one `GameRoom` actor. The
-  actor serializes every mutation and persists to SQLite.
-- **Two observable contracts.** `broadcastValue()` shares a scalar with every
-  authorized subscriber. `broadcastInvalidation()` refreshes components without
-  a value on the wire. Version 0.13.0 makes invalidation-only the default.
-- **Per-subscriber payloads.** The runtime projects the same payload separately
-  for each session, with that session's own authorization context.
-- **Effects with callbacks.** A deck import runs outside the turn. Success and
-  failure callbacks both receive the staged arguments.
-- **Rejection rollback.** A rejected turn discards the state, the staged
-  message, and the staged effect together.
-- **Reminders and commit actions.** A reminder closes an idle card search. A
-  commit action writes a metrics row inside the actor transaction.
-- **State migrations.** The actor is at `stateVersion: 3`. Version 1 rows
-  hydrate and upgrade with no extra code.
-- **Realtime without a bundler.** The browser client comes from
-  `node_modules/solid-objects/dist/browser`. A static route serves it as is.
-- **An operator dashboard.** `solid-objects/web` mounts at
-  `/solid-objects/dashboard`.
+One table code addresses one table. Two browsers share it, and each seat sees
+only its own cards. The other seat sees the same number of cards, each reading
+"Hidden card". Every change reaches the other browser over a live connection.
 
-The test suite proves the concurrency guarantees. Twenty-five concurrent
-`adjustLife` calls on one actor produce exactly twenty-five decrements. Three
-rooms progress at the same time. A repeated idempotency key applies once.
+The app runs on Node 24, TypeScript, SQLite, `node:http`, and `ws`. It adds no
+web framework, no bundler, and no client build step. Card art comes from
+Scryfall. Deck import reads the public Archidekt API.
+
+Contributors should start with [AGENTS.md](AGENTS.md), which covers the
+architecture, the state model, and the traps worth knowing.
 
 ## Setup
 
@@ -58,7 +43,7 @@ application policy authorizes loopback requests only.
 ## Verification
 
 ```bash
-pnpm test        # 128 tests
+pnpm test        # 144 tests
 pnpm typecheck
 pnpm build
 pnpm doctor
@@ -117,7 +102,7 @@ src/
   runtime.ts         configure the runtime, effects, commit actions, policies
   main.ts            entry point
 public/              browser client and stylesheet
-test/                128 tests
+test/                144 tests
 ```
 
 ## Environment

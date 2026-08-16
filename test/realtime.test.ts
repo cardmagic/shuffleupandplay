@@ -53,7 +53,7 @@ async function subscribe(options: {
 }): Promise<Subscriber> {
   const url = new URL(server.origin)
   url.protocol = "ws:"
-  url.pathname = "/solid-objects"
+  url.pathname = "/live"
   url.searchParams.set("roomCode", options.roomCode)
 
   const socket = new WebSocket(url, { headers: { cookie: options.client.cookie ?? "" } })
@@ -240,7 +240,7 @@ describe("realtime subscriptions", () => {
     const code = (await createRoom(server.client())).space?.code ?? ""
     const url = new URL(server.origin)
     url.protocol = "ws:"
-    url.pathname = "/solid-objects"
+    url.pathname = "/live"
     url.searchParams.set("roomCode", code)
 
     const socket = new WebSocket(url)

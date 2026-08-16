@@ -7,7 +7,7 @@ import type { GameViewer } from "../actors/game-room.ts"
 import { normalizeRoomCode } from "../game/room-code.ts"
 import { readSessionCookie } from "./session.ts"
 
-const REALTIME_PATH = "/solid-objects"
+const REALTIME_PATH = "/live"
 
 export type RealtimeBridge = {
   close(): Promise<void>

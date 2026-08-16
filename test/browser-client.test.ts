@@ -82,7 +82,7 @@ function openSession(options: { client: TestClient; roomCode: string; seat: numb
 
   const url = new URL(server.origin)
   url.protocol = "ws:"
-  url.pathname = "/solid-objects"
+  url.pathname = "/live"
   url.searchParams.set("roomCode", options.roomCode)
 
   const client = new SolidObjectsBrowserClient({
