@@ -10,7 +10,7 @@ proxy:
   ssl:
     certificate_pem: CLOUDFLARE_ORIGIN_CERT
     private_key_pem: CLOUDFLARE_ORIGIN_KEY
-  host: shuffleupandplay.com
+  host: shuffleupandplay.com,www.shuffleupandplay.com
   app_port: 3000
   forward_headers: true
   ssl_redirect: false
