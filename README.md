@@ -58,7 +58,7 @@ application policy authorizes loopback requests only.
 ## Verification
 
 ```bash
-pnpm test        # 126 tests
+pnpm test        # 128 tests
 pnpm typecheck
 pnpm build
 pnpm doctor
@@ -117,7 +117,7 @@ src/
   runtime.ts         configure the runtime, effects, commit actions, policies
   main.ts            entry point
 public/              browser client and stylesheet
-test/                126 tests
+test/                128 tests
 ```
 
 ## Environment
