@@ -20,6 +20,7 @@ export type TestRuntime = {
 export type TestRuntimeOptions = {
   deck?: (deckId: string) => Promise<ArchidektDeck>
   directory?: string
+  pollingIntervalMilliseconds?: number
 }
 
 export async function startTestRuntime(options: TestRuntimeOptions = {}): Promise<TestRuntime> {
@@ -30,7 +31,7 @@ export async function startTestRuntime(options: TestRuntimeOptions = {}): Promis
 
   const application = createShuffleApplication({
     databasePath,
-    pollingIntervalMilliseconds: 10,
+    pollingIntervalMilliseconds: options.pollingIntervalMilliseconds ?? 10,
     instrumentation: (event) => instrumentation.push(event.name),
     archidekt: {
       deck: async (deckId: string) => {
