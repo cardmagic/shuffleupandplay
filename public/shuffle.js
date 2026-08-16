@@ -134,6 +134,7 @@ async function sendAction(actorId, action) {
 }
 
 const TAP_SLOP_PIXELS = 10
+const DECK_COLORS = ["W", "U", "B", "R", "G", "C"]
 
 let drag = null
 
@@ -299,10 +300,79 @@ async function runDeckSearch(query) {
 function deckResultElement(deck) {
   const button = document.createElement("button")
   button.type = "button"
-  button.className = "deck-result"
+  button.className = "deck-result-item"
   button.dataset.deckId = String(deck.id)
-  button.textContent = `${deck.name} · ${deck.size} cards · ${deck.ownerName}`
+  button.append(deckCoverElement(deck), deckContentElement(deck))
   return button
+}
+
+function deckCoverElement(deck) {
+  const source = safeImageUrl(deck.featuredUrl)
+  if (!source) {
+    const placeholder = document.createElement("span")
+    placeholder.className = "deck-result-cover"
+    return placeholder
+  }
+
+  const cover = document.createElement("img")
+  cover.className = "deck-result-cover"
+  cover.loading = "lazy"
+  cover.alt = ""
+  cover.src = source
+  return cover
+}
+
+function deckContentElement(deck) {
+  const content = document.createElement("span")
+  content.className = "deck-result-content"
+
+  const name = document.createElement("strong")
+  name.textContent = deck.name
+
+  const meta = document.createElement("span")
+  meta.className = "meta"
+  meta.textContent = [deck.ownerName, `${deck.size} cards`, deck.updatedAt]
+    .filter((part) => part)
+    .join(" · ")
+
+  content.append(name, meta, deckColorBar(deck.colorBands))
+  return content
+}
+
+function deckColorBar(bands) {
+  const bar = document.createElement("span")
+  bar.className = "deck-color-bar"
+
+  const usable = Array.isArray(bands) ? bands.filter((band) => band.weight > 0) : []
+  if (usable.length === 0) {
+    bar.append(deckColorSegment("C", 100))
+    return bar
+  }
+
+  const total = usable.reduce((sum, band) => sum + band.weight, 0)
+  for (const band of usable) {
+    bar.append(deckColorSegment(band.color, (band.weight / total) * 100))
+  }
+  return bar
+}
+
+function deckColorSegment(color, percent) {
+  const known = DECK_COLORS.includes(color) ? color : "C"
+  const segment = document.createElement("span")
+  segment.className = `deck-color-segment color-${known}`
+  segment.style.width = `${percent}%`
+  segment.textContent = known
+  return segment
+}
+
+function safeImageUrl(value) {
+  if (typeof value !== "string" || value.length === 0) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" ? url.href : null
+  } catch {
+    return null
+  }
 }
 
 async function loadDeck(actorId, deckId) {

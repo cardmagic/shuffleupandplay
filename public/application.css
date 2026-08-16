@@ -394,6 +394,17 @@ button:disabled,
   gap: 0.6rem;
   background: linear-gradient(150deg, rgba(16, 24, 37, 0.87), rgba(13, 19, 29, 0.95));
   transition: border-color 120ms ease, transform 120ms ease;
+  width: 100%;
+  text-align: left;
+  align-items: start;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.deck-result-item:focus-visible {
+  outline: 2px solid var(--line-strong);
+  outline-offset: 2px;
 }
 
 .deck-result-item:hover {
