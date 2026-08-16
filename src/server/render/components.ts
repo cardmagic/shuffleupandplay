@@ -395,7 +395,7 @@ function actionButton(options: {
 }): string {
   const className = options.className ? ` class="${attribute(options.className)}"` : ""
   const describedName = options.accessibleName ?? options.title
-  const title = describedName ? ` title="${attribute(describedName)}"` : ""
+  const title = describedName ? ` data-tooltip="${attribute(describedName)}"` : ""
   const label = describedName ? ` aria-label="${attribute(describedName)}"` : ""
   const preview = options.preview ? ` ${previewAttributes(options.preview)}` : ""
   const filter = options.libraryCardName

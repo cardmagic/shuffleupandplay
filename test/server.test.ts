@@ -122,6 +122,20 @@ describe("counter tokens", () => {
     expect(emojiButtons.length).toBeGreaterThan(0)
     expect(emojiButtons.every((button) => button.includes("aria-label="))).toBe(true)
   })
+
+  test("labels each tool for an instant tooltip rather than the slow browser one", async () => {
+    const alice = server.client()
+    const { code } = await tableWithBattlefieldCard(alice)
+
+    const html = await (
+      await alice.fetch(`/tables/${code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    const tools = html.match(/<button[^>]*class="card-tool"[^>]*>/g) ?? []
+    expect(tools.length).toBeGreaterThan(0)
+    expect(tools.every((tool) => tool.includes("data-tooltip="))).toBe(true)
+    expect(tools.some((tool) => tool.includes("title="))).toBe(false)
+  })
 })
 
 describe("waiting for an opponent", () => {

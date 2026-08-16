@@ -80,6 +80,64 @@ function start(game) {
   wireCardPreview()
   wireLibraryFilter()
   wireCopyButton()
+  wireTooltips()
+}
+
+const TOOLTIP_DELAY_MILLISECONDS = 90
+
+function wireTooltips() {
+  let element = null
+  let timer = 0
+
+  const hide = () => {
+    window.clearTimeout(timer)
+    element?.remove()
+    element = null
+  }
+
+  const show = (control) => {
+    const text = control.dataset.tooltip
+    if (!text) return
+
+    hide()
+    timer = window.setTimeout(() => {
+      element = document.createElement("div")
+      element.className = "tooltip"
+      element.setAttribute("role", "presentation")
+      element.textContent = text
+      document.body.append(element)
+      placeTooltip(element, control)
+    }, TOOLTIP_DELAY_MILLISECONDS)
+  }
+
+  document.addEventListener("pointerover", (event) => {
+    const control = event.target.closest?.("[data-tooltip]")
+    if (control) return show(control)
+    if (element) hide()
+  })
+  document.addEventListener("pointerdown", hide)
+  document.addEventListener("focusin", (event) => {
+    const control = event.target.closest?.("[data-tooltip]")
+    if (control) show(control)
+  })
+  document.addEventListener("focusout", hide)
+  window.addEventListener("scroll", hide, true)
+}
+
+function placeTooltip(element, control) {
+  const anchor = control.getBoundingClientRect()
+  const box = element.getBoundingClientRect()
+  const margin = 8
+
+  const left = Math.min(
+    Math.max(margin, anchor.left + anchor.width / 2 - box.width / 2),
+    window.innerWidth - box.width - margin,
+  )
+  const above = anchor.top - box.height - margin
+  const top = above > margin ? above : anchor.bottom + margin
+
+  element.style.left = `${Math.round(left)}px`
+  element.style.top = `${Math.round(top)}px`
 }
 
 function targetIdFor(declaration) {
