@@ -126,6 +126,41 @@ describe("realtime subscriptions", () => {
     subscriber.close()
   })
 
+  test("invalidates the seat when a battlefield card taps", async () => {
+    const alice = server.client()
+    const code = (await createRoom(alice)).space?.code ?? ""
+    await alice.fetch(`/api/spaces/${code}/deck`, jsonRequest({ deckId: "55" }))
+    await server.harness.runtime.testing.drain()
+    await alice.fetch(
+      `/api/spaces/${code}/actions`,
+      jsonRequest({ action: { type: "drawCard", count: 1 } }),
+    )
+    const drawn = await alice.json<RoomPayload>(`/api/spaces/${code}/state`)
+    const instanceId = drawn.space?.players[0]?.hand[0]?.instanceId ?? ""
+    await alice.fetch(
+      `/api/spaces/${code}/actions`,
+      jsonRequest({ action: { type: "playFromHand", instanceId } }),
+    )
+
+    const played = await alice.json<RoomPayload>(`/api/spaces/${code}/state`)
+    const tappedVersion = (played.space?.version ?? 0) + 1
+
+    const subscriber = await subscribe({ client: alice, roomCode: code })
+    await subscriber.waitFor((entry) => entry.kind === "invalidation")
+
+    await alice.fetch(
+      `/api/spaces/${code}/actions`,
+      jsonRequest({ action: { type: "toggleTap", instanceId } }),
+    )
+
+    const envelope = await subscriber.waitFor(
+      (entry) => entry.kind === "invalidation" && entry.observables?.version === tappedVersion,
+    )
+
+    expect(envelope.invalidations).toContain("seatOne")
+    subscriber.close()
+  })
+
   test("pushes an invalidation after a committed action", async () => {
     const alice = server.client()
     const code = (await createRoom(alice)).space?.code ?? ""
