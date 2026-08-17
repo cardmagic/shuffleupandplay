@@ -131,13 +131,14 @@ Cloudflare terminates public TLS, and kamal-proxy serves a Cloudflare Origin
 certificate to Cloudflare. Set the Cloudflare SSL mode to Full (strict).
 
 ```bash
-KAMAL_SERVER_HOST=your-host kamal setup     # first deploy
-KAMAL_SERVER_HOST=your-host kamal deploy    # later deploys
+KAMAL_SERVER_HOST=your-host KAMAL_SSH_USER=your-user kamal setup     # first deploy
+KAMAL_SERVER_HOST=your-host KAMAL_SSH_USER=your-user kamal deploy    # later deploys
 ```
 
 `config/deploy.yml` keeps the host in an environment variable, so no server
-address enters this repository. `.kamal/secrets` reads every credential from
-1Password and holds no raw values.
+address enters this repository. `KAMAL_SSH_USER` defaults to `app`, so set it
+when the server uses a different account. `.kamal/secrets` reads every
+credential from 1Password and holds no raw values.
 
 | Secret | Purpose |
 | --- | --- |

@@ -133,8 +133,11 @@ Environment: `SHUFFLE_SECRET` (required), `SHUFFLE_DATABASE_PATH`,
 - No inline source comments. Explain a decision in the commit message.
 - Write a failing test first, including for bug fixes.
 - Prose in the product and the docs uses Simplified Technical English.
-- Deploy with `KAMAL_SERVER_HOST=<host> kamal deploy`. Secrets come from 1Password
-  through `.kamal/secrets`, which pins the account.
+- Deploy with `KAMAL_SERVER_HOST=<host> KAMAL_SSH_USER=<user> kamal deploy`. Both
+  variables are necessary. `KAMAL_SSH_USER` defaults to `app`, which fails when
+  the server uses a different account. Secrets come from 1Password through
+  `.kamal/secrets`, which pins the account. Unlock 1Password in the same shell,
+  because the session token does not cross shells.
 
 ## Deferred work
 
