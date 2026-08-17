@@ -4,6 +4,9 @@ import { applyPlayerAction, buildPlayer } from "../src/game/player.ts"
 import type { GameAction } from "../src/game/action.ts"
 import type { Card, Player } from "../src/game/types.ts"
 
+const COUNTER_WIDTH = 78
+const COUNTER_HEIGHT = 28
+
 const REVERSING_RANDOMNESS = {
   identifier: () => "counter-1",
   shuffle: <Item>(items: readonly Item[]): Item[] => [...items].reverse(),
@@ -209,6 +212,59 @@ describe("applyPlayerAction", () => {
     expect(moved.battlefield[0]?.counters[0]).toMatchObject({ x: 96, y: 136 })
     expect(increased.battlefield[0]?.counters[0]?.value).toBe(2)
     expect(cleared.battlefield[0]?.counters).toEqual([])
+  })
+
+  test("gives each counter added to one card its own position", () => {
+    let sequence = 0
+    const countingRandomness = {
+      identifier: () => {
+        sequence += 1
+        return `counter-${sequence}`
+      },
+      shuffle: <Item>(items: readonly Item[]): Item[] => [...items],
+    }
+    const played = applyPlayerAction({
+      player: playerWithCards(),
+      action: { type: "playFromHand", instanceId: "hand-1" },
+      randomness: countingRandomness,
+    })
+
+    const stacked = [1, 2, 3, 4, 5].reduce(
+      (player) =>
+        applyPlayerAction({
+          player,
+          action: { type: "addCounter", instanceId: "hand-1", x: 8, y: 8 },
+          randomness: countingRandomness,
+        }),
+      played,
+    )
+
+    const counters = stacked.battlefield[0]?.counters ?? []
+    expect(counters).toHaveLength(5)
+    expect(new Set(counters.map((counter) => `${counter.x},${counter.y}`)).size).toBe(5)
+    for (const counter of counters) {
+      const overlaps = counters.filter(
+        (other) =>
+          other.id !== counter.id &&
+          Math.abs(other.x - counter.x) < COUNTER_WIDTH &&
+          Math.abs(other.y - counter.y) < COUNTER_HEIGHT,
+      )
+      expect(overlaps).toEqual([])
+    }
+  })
+
+  test("keeps a dragged counter at the exact position the player chose", () => {
+    const played = apply(playerWithCards(), { type: "playFromHand", instanceId: "hand-1" })
+    const withCounter = apply(played, { type: "addCounter", instanceId: "hand-1", x: 8, y: 8 })
+    const moved = apply(withCounter, {
+      type: "moveCounter",
+      instanceId: "hand-1",
+      counterId: "counter-1",
+      x: 9,
+      y: 9,
+    })
+
+    expect(moved.battlefield[0]?.counters[0]).toMatchObject({ x: 9, y: 9 })
   })
 
   test("truncates a long counter label", () => {

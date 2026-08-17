@@ -9,6 +9,10 @@ const TABLE_RANGE = { x: { minimum: 0, maximum: 1200 }, y: { minimum: 0, maximum
 const COUNTER_RANGE = { x: { minimum: 0, maximum: 96 }, y: { minimum: 0, maximum: 136 } }
 const DRAW_RANGE = { minimum: 1, maximum: 12 }
 const MAXIMUM_COUNTER_LABEL_LENGTH = 9
+const COUNTER_FOOTPRINT = { width: 78, height: 28 }
+const COUNTER_SLOT_POSITION = { x: 8, y: 8 }
+const COUNTER_SLOT_STEP = 29
+const COUNTER_SLOT_COUNT = 5
 const PLAY_POSITION = { x: 240, y: 140 }
 const PLAY_STAGGER = 26
 const PLAY_COLUMNS = 6
@@ -223,22 +227,56 @@ function addCounter(options: {
   randomness: Randomness
 }): Player {
   const { player, action, randomness } = options
-  const counter: CardCounter = {
-    id: randomness.identifier(),
-    label: (action.label ?? "+1/+1").slice(0, MAXIMUM_COUNTER_LABEL_LENGTH),
-    value: 0,
+  const label = (action.label ?? "+1/+1").slice(0, MAXIMUM_COUNTER_LABEL_LENGTH)
+  const requested = {
     x: clamp(action.x, COUNTER_RANGE.x),
     y: clamp(action.y, COUNTER_RANGE.y),
   }
 
   return {
     ...player,
-    battlefield: player.battlefield.map((card) =>
-      card.instanceId === action.instanceId
-        ? { ...card, counters: [...card.counters, counter] }
-        : card,
-    ),
+    battlefield: player.battlefield.map((card) => {
+      if (card.instanceId !== action.instanceId) return card
+
+      const counter: CardCounter = {
+        id: randomness.identifier(),
+        label,
+        value: 0,
+        ...freeCounterPosition({ requested, taken: card.counters }),
+      }
+      return { ...card, counters: [...card.counters, counter] }
+    }),
   }
+}
+
+function freeCounterPosition(options: {
+  requested: { x: number; y: number }
+  taken: readonly CardCounter[]
+}): { x: number; y: number } {
+  const { requested, taken } = options
+  if (!overlapsCounter({ position: requested, taken })) return requested
+
+  for (let slot = 0; slot < COUNTER_SLOT_COUNT; slot += 1) {
+    const position = {
+      x: COUNTER_SLOT_POSITION.x,
+      y: clamp(COUNTER_SLOT_POSITION.y + slot * COUNTER_SLOT_STEP, COUNTER_RANGE.y),
+    }
+    if (!overlapsCounter({ position, taken })) return position
+  }
+
+  return requested
+}
+
+function overlapsCounter(options: {
+  position: { x: number; y: number }
+  taken: readonly CardCounter[]
+}): boolean {
+  const { position, taken } = options
+  return taken.some(
+    (counter) =>
+      Math.abs(counter.x - position.x) < COUNTER_FOOTPRINT.width &&
+      Math.abs(counter.y - position.y) < COUNTER_FOOTPRINT.height,
+  )
 }
 
 function moveCounter(options: {
