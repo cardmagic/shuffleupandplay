@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 
 import { applyPlayerAction, buildPlayer } from "../src/game/player.ts"
-import { startTestServer, type TestServer } from "./support/server.ts"
+import { jsonRequest, startTestServer, type TestClient, type TestServer } from "./support/server.ts"
 import type { Card, Player } from "../src/game/types.ts"
 
 let server: TestServer
@@ -121,7 +121,7 @@ describe("shared module route", () => {
 
     expect(response.status).toBe(200)
     const source = await response.text()
-    expect(source).toContain('from "/vendor/live/browser/host.js"')
+    expect(source).toMatch(/from "\/vendor\/[a-f0-9]{12}\/live\/browser\/host\.js"/)
     expect(source).not.toContain('from "solid-objects"')
   })
 })
@@ -139,7 +139,7 @@ describe("vendored browser runtime", () => {
 
     expect(response.status).toBe(200)
     const source = await response.text()
-    expect(source).toContain('from "/vendor/sqlite/index.mjs"')
+    expect(source).toMatch(/from "\/vendor\/[a-f0-9]{12}\/sqlite\/index\.mjs"/)
     expect(source).not.toContain('from "@sqlite.org/sqlite-wasm"')
   })
 
@@ -161,5 +161,89 @@ describe("vendored browser runtime", () => {
     const response = await server.client().fetch("/vendor/sqlite/index.mjs")
 
     expect(response.headers.getSetCookie()).toEqual([])
+  })
+})
+
+describe("stamped browser modules", () => {
+  async function entryModule(client: TestClient, pattern: RegExp): Promise<string> {
+    const html = await (await client.fetch("/", { headers: { accept: "text/html" } })).text()
+    const asset = pattern.exec(html)?.[0] ?? ""
+    if (!asset) throw new Error("the lobby names no matching module")
+
+    return (await client.fetch(asset)).text()
+  }
+
+  async function workerModule(client: TestClient): Promise<string> {
+    const created = await client.json<{ space: { code: string } }>(
+      "/api/tables",
+      jsonRequest({ playerName: "Alice", tableName: "Kitchen Table" }),
+    )
+    const page = await (
+      await client.fetch(`/tables/${created.space.code}`, { headers: { accept: "text/html" } })
+    ).text()
+    const url = /\/assets\/table-worker\.[a-f0-9]{12}\.js/.exec(page)?.[0] ?? ""
+    if (!url) throw new Error("the table page names no worker module")
+
+    return (await client.fetch(url)).text()
+  }
+
+  test("points the page at a stamped shared module", async () => {
+    const source = await entryModule(server.client(), /\/assets\/shuffle\.[a-f0-9]{12}\.js/)
+
+    expect(source).toMatch(/from "\/shared\/[a-f0-9]{12}\/server\/render\/components\.ts"/)
+    expect(source).not.toContain('from "/shared/server/render/components.ts"')
+  })
+
+  test("points the worker at a stamped runtime and mirror", async () => {
+    const source = await workerModule(server.client())
+
+    expect(source).toMatch(/from "\/vendor\/[a-f0-9]{12}\/live\/browser\/host\.js"/)
+    expect(source).toMatch(/from "\/shared\/[a-f0-9]{12}\/actors\/table-mirror\.ts"/)
+  })
+
+  test("serves a stamped shared module immutably", async () => {
+    const client = server.client()
+    const source = await entryModule(client, /\/assets\/shuffle\.[a-f0-9]{12}\.js/)
+    const url = /\/shared\/[a-f0-9]{12}\/server\/render\/components\.ts/.exec(source)?.[0] ?? ""
+
+    const response = await client.fetch(url)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    expect(await response.text()).toContain("export function renderComponent")
+  })
+
+  test("serves a stamped vendor module immutably", async () => {
+    const client = server.client()
+    const source = await workerModule(client)
+    const url = /\/vendor\/[a-f0-9]{12}\/live\/browser\/host\.js/.exec(source)?.[0] ?? ""
+
+    const response = await client.fetch(url)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+  })
+
+  test("keeps a shared module's own imports relative, so they inherit the stamp", async () => {
+    const client = server.client()
+    const source = await workerModule(client)
+    const url = /\/shared\/[a-f0-9]{12}\/actors\/table-mirror\.ts/.exec(source)?.[0] ?? ""
+
+    const mirror = await (await client.fetch(url)).text()
+
+    expect(mirror).toContain('from "../game/player.ts"')
+    expect(mirror).toMatch(/from "\/vendor\/[a-f0-9]{12}\/live\/browser\/host\.js"/)
+  })
+
+  test("keeps a vendor module's bare specifier inside the same stamp", async () => {
+    const client = server.client()
+    const source = await workerModule(client)
+    const stamp = /\/vendor\/([a-f0-9]{12})\//.exec(source)?.[1] ?? ""
+
+    const adapter = await (
+      await client.fetch(`/vendor/${stamp}/live/database/sqlite-wasm.js`)
+    ).text()
+
+    expect(adapter).toContain(`from "/vendor/${stamp}/sqlite/index.mjs"`)
   })
 })

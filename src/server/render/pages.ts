@@ -10,6 +10,7 @@ import {
 } from "./components.ts"
 import { attribute, escapeHtml, jsonAttribute } from "./escape.ts"
 import { GameRoom } from "../../actors/game-room.ts"
+import { MODULE_STAMP, stampedEntryUrl } from "../shared-modules.ts"
 import type { RoomPayload } from "../../game/types.ts"
 
 const PUBLIC_DIRECTORY = resolve(import.meta.dirname, "../../../public")
@@ -28,6 +29,7 @@ const ASSET_NAMES = [
 ] as const
 
 const RELATIVE_IMPORT_PATTERN = /(\bfrom\s+|\bimport\s+)(["'])\.\/([^"']+)\2/g
+const ABSOLUTE_IMPORT_PATTERN = /(\bfrom\s+|\bimport\s+)(["'])(\/(?:shared|vendor)\/[^"']+)\2/g
 
 export const SITE_ORIGIN = process.env.SHUFFLE_PUBLIC_ORIGIN ?? "https://shuffleupandplay.com"
 
@@ -42,8 +44,17 @@ export function moduleImports(source: string): string[] {
 }
 
 export function stampModuleImports(source: string): string {
-  return source.replaceAll(RELATIVE_IMPORT_PATTERN, (match, keyword: string, _quote, name: string) => {
-    const stamped = ASSET_URLS[name]
+  const relative = source.replaceAll(
+    RELATIVE_IMPORT_PATTERN,
+    (match, keyword: string, _quote, name: string) => {
+      const stamped = ASSET_URLS[name]
+
+      return stamped ? `${keyword}"${stamped}"` : match
+    },
+  )
+
+  return relative.replaceAll(ABSOLUTE_IMPORT_PATTERN, (match, keyword: string, _quote, specifier: string) => {
+    const stamped = stampedEntryUrl(specifier)
 
     return stamped ? `${keyword}"${stamped}"` : match
   })
@@ -57,6 +68,7 @@ function assetDigest(name: string): string {
   const source = readFileSync(resolve(PUBLIC_DIRECTORY, name))
   const hash = createHash("sha256").update(source)
   if (name.endsWith(".js")) {
+    hash.update(MODULE_STAMP)
     for (const dependency of moduleImports(source.toString("utf8"))) {
       hash.update(assetDigest(dependency))
     }

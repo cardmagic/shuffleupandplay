@@ -31,7 +31,12 @@ import { pollRevision, pollTimeoutMilliseconds, waitForTableChange } from "./liv
 import { createLiveTables, type LiveTablesView } from "./live-tables.ts"
 import { createRateLimiter, type RateLimiter } from "./rate-limit.ts"
 import { attachRealtime } from "./realtime.ts"
-import { rewriteBrowserSpecifiers, serveSharedModule } from "./shared-modules.ts"
+import {
+  moduleCacheControl,
+  readModuleStamp,
+  rewriteBrowserSpecifiers,
+  serveSharedModule,
+} from "./shared-modules.ts"
 import { ingestSyncEnvelope, isSyncRejection, readSyncEnvelope } from "./sync-ingest.ts"
 import {
   componentTargetId,
@@ -79,6 +84,7 @@ const STATIC_ROOTS: Record<string, string> = {
 }
 
 const MODULE_EXTENSIONS = new Set([".js", ".mjs"])
+const VENDOR_PREFIX = "/vendor/"
 
 const FINGERPRINT_PATTERN = /^(.*)\.[a-f0-9]{12}(\.[a-z0-9]+)$/
 
@@ -948,11 +954,16 @@ export async function serveStaticAsset(options: {
   const { method, pathname, response } = options
   if (method !== "GET" && method !== "HEAD") return false
 
-  const entry = Object.entries(STATIC_ROOTS).find(([prefix]) => pathname.startsWith(prefix))
+  const vendor = pathname.startsWith(VENDOR_PREFIX)
+    ? readModuleStamp(pathname, VENDOR_PREFIX)
+    : undefined
+  const resolvedPath = vendor ? `${VENDOR_PREFIX}${vendor.path}` : pathname
+
+  const entry = Object.entries(STATIC_ROOTS).find(([prefix]) => resolvedPath.startsWith(prefix))
   if (!entry) return false
 
   const [prefix, root] = entry
-  const requested = normalize(pathname.slice(prefix.length))
+  const requested = normalize(resolvedPath.slice(prefix.length))
   if (requested.startsWith("..")) return false
 
   const match = FINGERPRINT_PATTERN.exec(requested)
@@ -969,9 +980,7 @@ export async function serveStaticAsset(options: {
   const extension = extname(filePath)
   response.writeHead(200, {
     "content-type": CONTENT_TYPES[extension] ?? "application/octet-stream",
-    "cache-control": match
-      ? "public, max-age=31536000, immutable"
-      : "public, max-age=300, must-revalidate",
+    "cache-control": moduleCacheControl(vendor ? vendor.stamped : Boolean(match)),
   })
   if (method === "HEAD") {
     response.end()

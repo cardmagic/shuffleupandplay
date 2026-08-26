@@ -203,9 +203,32 @@ and realtime envelopes. Never hide it with CSS. `test/realtime.test.ts` and
 emits `/assets/<name>.<hash>.<ext>`. The static handler strips the hash, so
 fingerprinted URLs cache `immutable` for a year.
 
-**Gotcha:** the hash is computed once at boot. Editing CSS or JS while the server
-runs keeps the old URL, and the browser will keep the old immutable copy.
-Restart the server after editing anything in `public/`.
+A module's hash covers the modules it imports as well as its own bytes, and
+every import is rewritten to a stamped URL before the file is served:
+
+- A relative import (`./drag-math.js`) becomes `/assets/drag-math.<hash>.js`.
+- An import from `/shared/` or `/vendor/` gains the browser module stamp.
+- `MODULE_STAMP` in `src/server/shared-modules.ts` is one hash over every
+  shared source and the `solid-objects` and `@sqlite.org/sqlite-wasm`
+  versions. It also feeds every JavaScript asset's hash.
+
+Relative imports *inside* `/shared/` and `/vendor/` stay relative, so they
+inherit the stamp of the URL that pulled them in. Only the entry references
+need rewriting.
+
+**Gotchas:**
+
+- The hash is computed once at boot. Editing CSS or JS while the server runs
+  keeps the old URL, and the browser will keep the old immutable copy. Restart
+  the server after editing anything in `public/`.
+- Never let a stamped module import an unstamped one. A deploy once shipped a
+  fresh `shuffle.js` that imported `./drag-math.js` under a five minute cache;
+  browsers paired the new entry with a stale dependency and the whole module
+  died on `does not provide an export named 'cardPoint'`. The stamp has to
+  cover the whole graph, or an entry held under the year-long cache can pair
+  with content it was never built against.
+- An unstamped `/shared/` or `/vendor/` URL still serves, with the short cache,
+  so a hand-typed URL works while developing.
 
 ## Security
 
