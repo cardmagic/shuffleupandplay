@@ -1,4 +1,4 @@
-const KEY_ATTRIBUTE = "data-instance-id"
+const KEY_ATTRIBUTES = ["data-instance-id", "data-counter-id"]
 
 export function morph(target, rendered) {
   const next = document.createElement("div")
@@ -41,18 +41,29 @@ function morphChildren(current, next) {
 function keyedChildren(current) {
   const keyed = new Map()
   for (const node of current.children) {
-    const key = node.getAttribute?.(KEY_ATTRIBUTE)
-    if (key) keyed.set(`${node.nodeName}:${key}`, node)
+    const key = nodeKey(node)
+    if (key) keyed.set(key, node)
   }
   return keyed
 }
 
 function keyedMatch(options) {
   const { desired, keyed } = options
-  const key = desired.nodeType === Node.ELEMENT_NODE ? desired.getAttribute(KEY_ATTRIBUTE) : null
+  const key = nodeKey(desired)
   if (!key) return null
 
-  return keyed.get(`${desired.nodeName}:${key}`) ?? null
+  return keyed.get(key) ?? null
+}
+
+function nodeKey(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return null
+
+  const parts = KEY_ATTRIBUTES.map((name) => node.getAttribute(name)).filter(
+    (value) => value !== null,
+  )
+  if (parts.length === 0) return null
+
+  return `${node.nodeName}:${parts.join(":")}`
 }
 
 function morphNode(current, desired) {

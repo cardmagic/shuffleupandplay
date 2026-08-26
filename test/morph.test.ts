@@ -108,3 +108,55 @@ describe("morph", () => {
     expect(target.querySelector("div")).toBe(card)
   })
 })
+
+describe("morph with several counters on one card", () => {
+  const chip = (counterId: string, left: number) =>
+    `<div class="counter-chip" data-counter-id="${counterId}" data-instance-id="card-1" style="left:${left}px;top:0px"><span class="counter-value">0</span></div>`
+
+  test("keeps every counter, because they share the card's instance id", () => {
+    const target = container(`<div class="battlefield-card" data-instance-id="card-1">${chip("a", 8)}${chip("b", 40)}</div>`)
+
+    morph(
+      target,
+      `<div class="battlefield-card" data-instance-id="card-1">${chip("a", 8)}${chip("b", 40)}${chip("c", 70)}</div>`,
+    )
+
+    const counters = Array.from(target.querySelectorAll(".counter-chip"), (node) =>
+      node.getAttribute("data-counter-id"),
+    )
+    expect(counters).toEqual(["a", "b", "c"])
+  })
+
+  test("drops only the counter that went away", () => {
+    const target = container(
+      `<div class="battlefield-card" data-instance-id="card-1">${chip("a", 8)}${chip("b", 40)}${chip("c", 70)}</div>`,
+    )
+
+    morph(
+      target,
+      `<div class="battlefield-card" data-instance-id="card-1">${chip("a", 8)}${chip("c", 70)}</div>`,
+    )
+
+    const counters = Array.from(target.querySelectorAll(".counter-chip"), (node) =>
+      node.getAttribute("data-counter-id"),
+    )
+    expect(counters).toEqual(["a", "c"])
+  })
+
+  test("keeps each counter's own node when one of them moves", () => {
+    const target = container(
+      `<div class="battlefield-card" data-instance-id="card-1">${chip("a", 8)}${chip("b", 40)}</div>`,
+    )
+    const first = target.querySelector('[data-counter-id="a"]')
+
+    morph(
+      target,
+      `<div class="battlefield-card" data-instance-id="card-1">${chip("a", 8)}${chip("b", 96)}</div>`,
+    )
+
+    expect(target.querySelector('[data-counter-id="a"]')).toBe(first)
+    expect(target.querySelector('[data-counter-id="b"]')?.getAttribute("style")).toBe(
+      "left:96px;top:0px",
+    )
+  })
+})
