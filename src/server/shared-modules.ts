@@ -104,9 +104,7 @@ export function isSharedModule(relativePath: string): boolean {
 }
 
 export function moduleCacheControl(stamped: boolean): string {
-  return stamped
-    ? "public, max-age=31536000, immutable"
-    : "public, max-age=300, must-revalidate"
+  return stamped ? "public, max-age=31536000, immutable" : "no-cache"
 }
 
 export async function serveSharedModule(options: {

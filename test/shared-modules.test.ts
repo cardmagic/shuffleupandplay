@@ -235,6 +235,41 @@ describe("stamped browser modules", () => {
     expect(mirror).toMatch(/from "\/vendor\/[a-f0-9]{12}\/live\/browser\/host\.js"/)
   })
 
+  test("refuses to let an unstamped module be held in a cache", async () => {
+    const client = server.client()
+
+    for (const path of ["/shared/game/player.ts", "/vendor/live/browser/host.js"]) {
+      const response = await client.fetch(path)
+
+      expect(response.status, path).toBe(200)
+      expect(response.headers.get("cache-control"), path).toBe("no-cache")
+    }
+  })
+
+  test("leaves no unstamped shared or vendored URL in anything it serves", async () => {
+    const client = server.client()
+    const html = await (await client.fetch("/", { headers: { accept: "text/html" } })).text()
+    const created = await client.json<{ space: { code: string } }>(
+      "/api/tables",
+      jsonRequest({ playerName: "Alice", tableName: "Kitchen Table" }),
+    )
+    const table = await (
+      await client.fetch(`/tables/${created.space.code}`, { headers: { accept: "text/html" } })
+    ).text()
+
+    const assets = [...`${html}${table}`.matchAll(/\/assets\/[a-z-]+\.[a-f0-9]{12}\.js/g)].map(
+      (match) => match[0],
+    )
+    expect(assets.length).toBeGreaterThan(1)
+
+    for (const asset of new Set(assets)) {
+      const source = await (await client.fetch(asset)).text()
+      const unstamped = [...source.matchAll(/\/(?:shared|vendor)\/(?![a-f0-9]{12}\/)[^"'\s)]*/g)]
+
+      expect(unstamped.map((match) => match[0]), `${asset} names an unstamped module`).toEqual([])
+    }
+  })
+
   test("keeps a vendor module's bare specifier inside the same stamp", async () => {
     const client = server.client()
     const source = await workerModule(client)

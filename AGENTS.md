@@ -227,8 +227,13 @@ need rewriting.
   died on `does not provide an export named 'cardPoint'`. The stamp has to
   cover the whole graph, or an entry held under the year-long cache can pair
   with content it was never built against.
-- An unstamped `/shared/` or `/vendor/` URL still serves, with the short cache,
-  so a hand-typed URL works while developing.
+- An unstamped URL still serves, so a hand-typed one works while developing, but
+  it answers `Cache-Control: no-cache`. A URL that does not name its own content
+  is never reusable from a cache without checking, so the stale-pairing bug
+  cannot come back through a URL the rewrite did not see.
+- `test/shared-modules.test.ts` fails if any served asset names a `/shared/` or
+  `/vendor/` URL without a stamp. The rewrite covers imports; the guard covers a
+  URL written by hand, which the rewrite never sees.
 
 ## Security
 
@@ -313,6 +318,6 @@ A move can still be lost if the table refuses it for good: the outbox treats a
 400 or a 403 as delivered and drops it, and the high-water mark then hides the
 gap. Reloading the table redraws the true seat.
 
-Nothing asserts that a hand-written `/shared/` or `/vendor/` URL carries the
-stamp. The rewrite covers every import the application writes today, but a URL
-built at runtime would slip past it.
+A URL assembled at runtime from parts still escapes both the rewrite and the
+guard, which reads served text. Such a URL is not cacheable, so it cannot go
+stale, but it also gives up the year-long cache. Import the module instead.
