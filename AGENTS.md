@@ -83,6 +83,7 @@ broadcast, and the card sat still until an unrelated action changed a count.
 | `GET /api/operator/tables` | Live table view. Operator surface only. |
 | `GET /live` | WebSocket. Neutral path on purpose. |
 | `GET /shared/**`, `GET /vendor/**` | Browser modules. See below. |
+| `GET /runtime`, `GET /api/runtime` | Public aggregate counts. Names nothing. |
 | `/privacy`, `/credits`, `/robots.txt`, `/manifest.webmanifest`, `/.well-known/security.txt` | Public. |
 | `GET /up` | Health check. Answers GET and HEAD, sets no cookie. |
 
@@ -234,6 +235,27 @@ need rewriting.
 - `test/shared-modules.test.ts` fails if any served asset names a `/shared/` or
   `/vendor/` URL without a stamp. The rewrite covers imports; the guard covers a
   URL written by hand, which the rewrite never sees.
+
+## The public runtime page
+
+`GET /runtime` and `GET /api/runtime` are public, need no session, and show
+aggregate counts only: tables in play, durable messages, refused messages,
+external effects, scheduled alarms, dead letters, and how many times each kind
+of move has been played. They exist to show what the runtime does on a demo
+site.
+
+**They must never name anything.** No table code, player name, session, card or
+identifier of any kind. A table code is a join key, so publishing one lets a
+stranger take an empty seat. `test/runtime-page.test.ts` asserts the answer
+holds no code, no name, and no UUID, against a table with a loaded deck.
+
+The operator dashboard is not an alternative here. Its instance detail page
+runs `SELECT *` on the instances table, and for this application that column is
+the game state: both players' hands, libraries and session ids. Read-only does
+not help, because the leak is in reading.
+
+The answer is cached for five seconds. It counts rows, so a public page without
+a cache would let a crowd drive the database.
 
 ## The operator surface
 

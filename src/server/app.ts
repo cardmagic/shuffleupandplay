@@ -29,6 +29,7 @@ import {
 } from "./http.ts"
 import { pollRevision, pollTimeoutMilliseconds, waitForTableChange } from "./live-poll.ts"
 import { createLiveTables, type LiveTablesView } from "./live-tables.ts"
+import { createRuntimeSummary, type RuntimeSummaryView } from "./runtime-summary.ts"
 import {
   createOperatorGuard,
   type OperatorGuard,
@@ -57,6 +58,7 @@ import {
   lobbyPage,
   notFoundPage,
   privacyPage,
+  runtimePage,
   PRODUCT_DESCRIPTION,
   SITE_ORIGIN,
   stampModuleImports,
@@ -147,6 +149,7 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
       })
     : undefined
   const liveTables = options.operatorDashboard ? createLiveTables({ runtime }) : undefined
+  const runtimeSummary = createRuntimeSummary({ application })
   const operatorMountPath = options.operatorDashboard?.mountPath ?? DEFAULT_DASHBOARD_PATH
   const operatorGuard = options.operatorDashboard
     ? createOperatorGuard({ password: options.operatorDashboard.password })
@@ -162,6 +165,13 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     if (readMethod && pathname === "/up") {
       response.writeHead(200, { "content-type": "text/plain; charset=utf-8" })
       response.end("OK")
+      return
+    }
+
+    if (readMethod && (pathname === "/runtime" || pathname === "/api/runtime")) {
+      void showRuntime({ pathname, response, summary: runtimeSummary }).catch(() =>
+        respondToUnhandledError({ response, error: new Error("runtime summary failed") }),
+      )
       return
     }
 
@@ -575,6 +585,22 @@ async function showState(options: {
   }
 
   sendJson({ context, status: 200, body: payload })
+}
+
+async function showRuntime(options: {
+  pathname: string
+  response: ServerResponse
+  summary: RuntimeSummaryView
+}): Promise<void> {
+  const { pathname, response } = options
+  const summary = await options.summary.read()
+  const json = pathname === "/api/runtime"
+
+  response.writeHead(200, {
+    "content-type": json ? "application/json; charset=utf-8" : "text/html; charset=utf-8",
+    "cache-control": "public, max-age=5",
+  })
+  response.end(json ? JSON.stringify(summary) : runtimePage(summary))
 }
 
 async function showOperatorTables(options: {

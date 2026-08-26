@@ -11,6 +11,7 @@ import {
 import { attribute, escapeHtml, jsonAttribute } from "./escape.ts"
 import { GameRoom } from "../../actors/game-room.ts"
 import { MODULE_STAMP, stampedEntryUrl } from "../shared-modules.ts"
+import type { RuntimeSummary } from "../runtime-summary.ts"
 import type { RoomPayload } from "../../game/types.ts"
 
 const PUBLIC_DIRECTORY = resolve(import.meta.dirname, "../../../public")
@@ -297,6 +298,8 @@ export function lobbyPage(options: {
       <li><strong>Share the invite link.</strong> It fills in the table code for you.</li>
       <li><strong>Load your decks and play.</strong> Draw, tap, move and track cards together.</li>
     </ol>
+    <p class="lobby-links"><a href="/runtime">Runtime</a> · <a href="/credits">Credits</a> ·
+      <a href="/privacy">Privacy</a></p>
   </section>
 </main>`,
   })
@@ -416,6 +419,89 @@ export function creditsPage(): string {
       used are property of Wizards of the Coast LLC, a subsidiary of Hasbro, Inc.</p>
     <p>Magic: The Gathering is a trademark of Wizards of the Coast LLC.</p>
     <p><a href="/">Back to the tables</a> · <a href="/privacy">Privacy</a></p>
+  </section>
+</main>`,
+  })
+}
+
+const MOVE_LABELS: Record<string, string> = {
+  adjustLife: "Life changed",
+  resetLife: "Life reset",
+  setLife: "Life set",
+  drawCard: "Cards drawn",
+  shuffleLibrary: "Libraries shuffled",
+  untapAll: "Untap steps",
+  playFromHand: "Cards played",
+  toggleTap: "Cards tapped",
+  moveBattlefieldCard: "Cards moved",
+  moveCardZone: "Zone changes",
+  moveToDeck: "Cards returned to a library",
+  moveLibraryCardToHand: "Cards tutored",
+  openDeckSearch: "Library searches",
+  closeDeckSearch: "Searches closed",
+  addCounter: "Counters added",
+  moveCounter: "Counters moved",
+  updateCounterValue: "Counters changed",
+}
+
+export function runtimePage(summary: RuntimeSummary): string {
+  const figures = [
+    { label: "Tables in play", value: summary.tables.active },
+    { label: "Durable messages", value: summary.messages.total },
+    { label: "Messages refused", value: summary.messages.failed },
+    { label: "External effects", value: summary.effects.total },
+    { label: "Alarms scheduled", value: summary.reminders.scheduled },
+    { label: "Dead letters", value: summary.deadLetters },
+  ]
+
+  return layout({
+    title: "Runtime · Shuffle Up and Play",
+    description:
+      "Live counts from the durable runtime behind Shuffle Up and Play. No table, player or card is named.",
+    canonical: `${SITE_ORIGIN}/runtime`,
+    body: `<main class="layout prose" id="main">
+  <header class="topbar panel">
+    <h1>Runtime</h1>
+    <p>Every move at every table becomes a durable, ordered message. These are the totals.
+      No table, player or card is named here.</p>
+  </header>
+  <section class="panel">
+    <div class="runtime-figures">
+      ${figures
+        .map(
+          (figure) => `<div class="runtime-figure">
+        <span class="runtime-figure-value">${figure.value}</span>
+        <span class="runtime-figure-label">${escapeHtml(figure.label)}</span>
+      </div>`,
+        )
+        .join("")}
+    </div>
+  </section>
+  <section class="panel">
+    <h2>Moves played</h2>
+    ${
+      summary.moves.length === 0
+        ? `<p>No moves yet.</p>`
+        : `<table class="runtime-table">
+      <thead><tr><th scope="col">Move</th><th scope="col">Times played</th></tr></thead>
+      <tbody>${summary.moves
+        .map(
+          (move) => `<tr>
+        <td>${escapeHtml(MOVE_LABELS[move.type] ?? move.type)}</td>
+        <td>${move.count}</td>
+      </tr>`,
+        )
+        .join("")}</tbody>
+    </table>`
+    }
+  </section>
+  <section class="panel">
+    <h2>How it works</h2>
+    <p>Shuffle Up and Play is built on
+      <a href="https://solidobjects.dev" rel="noopener noreferrer">Solid Objects</a>. One table is
+      one addressable object with durable state, an ordered mailbox and its own alarms, kept in a
+      plain SQL database. A move is a message, so it survives a lost connection and applies once.</p>
+    <p><a href="/">Back to the tables</a> · <a href="/credits">Credits</a></p>
   </section>
 </main>`,
   })

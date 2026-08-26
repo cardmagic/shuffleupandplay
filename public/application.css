@@ -1228,6 +1228,51 @@ button:disabled,
 
 .queued-moves[hidden] { display: none; }
 
+.runtime-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1rem;
+}
+
+.runtime-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(214, 195, 153, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.runtime-figure-value {
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.runtime-figure-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.runtime-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.runtime-table th,
+.runtime-table td {
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(214, 195, 153, 0.16);
+}
+
+.runtime-table td:last-child,
+.runtime-table th:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .toast-region {
   position: fixed;
   left: 50%;
