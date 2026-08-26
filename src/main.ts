@@ -5,6 +5,7 @@ import type { DashboardAccess } from "solid-objects/web"
 import { GameRoom } from "./actors/game-room.ts"
 import { createShuffleApplication } from "./runtime.ts"
 import { createShuffleServer } from "./server/app.ts"
+import { requireOperatorPassword } from "./server/operator-access.ts"
 import { createShutdown } from "./server/shutdown.ts"
 
 const databasePath = resolve(
@@ -14,14 +15,14 @@ const secret = process.env.SHUFFLE_SECRET
 if (!secret || secret.length < 32) {
   throw new Error("SHUFFLE_SECRET must be set to at least 32 characters")
 }
+const production = process.env.NODE_ENV === "production"
 const operatorDashboardAccess = dashboardAccess(process.env.SHUFFLE_OPERATOR_DASHBOARD)
-if (
-  operatorDashboardAccess &&
-  operatorDashboardAccess !== "public-read-only" &&
-  process.env.NODE_ENV === "production"
-) {
-  throw new Error("SHUFFLE_OPERATOR_DASHBOARD cannot be enabled in production")
+if (operatorDashboardAccess === "public-read-only" && production) {
+  throw new Error("SHUFFLE_OPERATOR_DASHBOARD cannot be public in production")
 }
+const operatorPassword = operatorDashboardAccess
+  ? requireOperatorPassword({ password: process.env.SHUFFLE_OPERATOR_PASSWORD, production })
+  : undefined
 
 mkdirSync(dirname(databasePath), { recursive: true })
 
@@ -39,7 +40,12 @@ const server = createShuffleServer({
   secret,
   secureCookies: process.env.NODE_ENV === "production",
   ...(operatorDashboardAccess
-    ? { operatorDashboard: { access: operatorDashboardAccess } }
+    ? {
+        operatorDashboard: {
+          access: operatorDashboardAccess,
+          ...(operatorPassword === undefined ? {} : { password: operatorPassword }),
+        },
+      }
     : {}),
 })
 

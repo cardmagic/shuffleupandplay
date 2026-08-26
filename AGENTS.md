@@ -235,6 +235,41 @@ need rewriting.
   `/vendor/` URL without a stamp. The rewrite covers imports; the guard covers a
   URL written by hand, which the rewrite never sees.
 
+## The operator surface
+
+`SHUFFLE_OPERATOR_DASHBOARD` opens two routes, and nothing opens them by
+default:
+
+| Route | What it shows |
+| --- | --- |
+| `/solid-objects/dashboard` | Messages, reminders, dead letters, processes, retention |
+| `/api/operator/tables` | Active tables with their revision and life totals, from live signals |
+
+`SHUFFLE_OPERATOR_PASSWORD` guards both with HTTP Basic authentication.
+`src/server/operator-access.ts` compares SHA-256 digests with
+`timingSafeEqual`, so a wrong password leaks neither its length nor how much of
+it matched, and it rate limits to ten attempts per address every five minutes.
+The throttle counts every attempt, so a guesser that finds the password mid
+burst still meets a 429.
+
+Production runs `authorized-read-only`, which shows state and refuses every
+mutating control. Destructive administration goes through the CLI on the host,
+which needs SSH.
+
+The boot refuses three unsafe combinations rather than starting:
+
+- the dashboard in production with no password
+- a password under 16 characters
+- `public-read-only` in production, which has no password at all
+
+With no password set outside production, the loopback address is still trusted,
+so the CLI keeps working locally. **Setting a password turns that off**: the
+password is then required from every address, loopback included, which is what
+makes the guard testable and predictable.
+
+The password lives in 1Password and reaches the container through
+`.kamal/secrets`, exactly like `SHUFFLE_SECRET`.
+
 ## Security
 
 `applySecurityHeaders` sets CSP, HSTS, nosniff, frame-ancestors, Referrer-Policy
@@ -294,7 +329,8 @@ events, a rotated card's geometry, and what a second seat actually receives.
   the mirror rebuilds from the table.
 
 Environment: `SHUFFLE_SECRET` (required), `SHUFFLE_DATABASE_PATH`,
-`SHUFFLE_OPERATOR_DASHBOARD`, `SHUFFLE_PUBLIC_ORIGIN`, `PORT`, `NODE_ENV`.
+`SHUFFLE_OPERATOR_DASHBOARD`, `SHUFFLE_OPERATOR_PASSWORD`,
+`SHUFFLE_PUBLIC_ORIGIN`, `PORT`, `NODE_ENV`.
 
 ## Conventions
 

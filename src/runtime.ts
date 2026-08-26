@@ -163,8 +163,12 @@ export function createShuffleApplication(options: ShuffleRuntimeOptions): Shuffl
   }
 }
 
+const OPERATOR_SOURCES = new Set(["cli", "operator"])
+
 export function isOperator(authorizationContext: unknown): boolean {
-  return isRecord(authorizationContext) && authorizationContext.source === "cli"
+  if (!isRecord(authorizationContext)) return false
+
+  return typeof authorizationContext.source === "string" && OPERATOR_SOURCES.has(authorizationContext.source)
 }
 
 function authorizesActor(options: {

@@ -28,11 +28,13 @@ registry:
 env:
   secret:
     - SHUFFLE_SECRET
+    - SHUFFLE_OPERATOR_PASSWORD
   clear:
     NODE_ENV: production
     PORT: 3000
     SHUFFLE_DATABASE_PATH: /app/storage/solid-objects.sqlite3
     SHUFFLE_PUBLIC_ORIGIN: https://shuffleupandplay.com
+    SHUFFLE_OPERATOR_DASHBOARD: authorized-read-only
 
 volumes:
   - "shuffleupandplay-storage:/app/storage"

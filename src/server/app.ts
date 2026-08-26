@@ -29,6 +29,11 @@ import {
 } from "./http.ts"
 import { pollRevision, pollTimeoutMilliseconds, waitForTableChange } from "./live-poll.ts"
 import { createLiveTables, type LiveTablesView } from "./live-tables.ts"
+import {
+  createOperatorGuard,
+  type OperatorGuard,
+  type OperatorVerdict,
+} from "./operator-access.ts"
 import { createRateLimiter, type RateLimiter } from "./rate-limit.ts"
 import { attachRealtime } from "./realtime.ts"
 import {
@@ -65,6 +70,7 @@ import {
 } from "./session.ts"
 
 const MAXIMUM_CODE_ATTEMPTS = 8
+const DEFAULT_DASHBOARD_PATH = "/solid-objects/dashboard"
 
 const REJECTION_STATUSES: Record<string, number> = {
   roomNotFound: 404,
@@ -106,7 +112,10 @@ export type ShuffleServerOptions = {
 export type ShuffleOperatorDashboardOptions = {
   mountPath?: string
   access?: DashboardAccess
+  password?: string
 }
+
+const OPERATOR_TABLES_PATH = "/api/operator/tables"
 
 export type ShuffleServer = {
   server: Server
@@ -126,16 +135,22 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     syncMoves: createRateLimiter({ limit: 600, windowMilliseconds: 60_000 }),
   }
   const requestSessions = new WeakMap<IncomingMessage, RequestSession>()
+  const operatorRequests = new WeakSet<IncomingMessage>()
   const dashboardSessions = new Map<string, Map<string, string>>()
   const dashboardHandler = options.operatorDashboard
     ? createOperatorDashboardHandler({
         runtime,
         requestSessions,
         dashboardSessions,
+        operatorRequests,
         options: options.operatorDashboard,
       })
     : undefined
   const liveTables = options.operatorDashboard ? createLiveTables({ runtime }) : undefined
+  const operatorMountPath = options.operatorDashboard?.mountPath ?? DEFAULT_DASHBOARD_PATH
+  const operatorGuard = options.operatorDashboard
+    ? createOperatorGuard({ password: options.operatorDashboard.password })
+    : undefined
 
   const server = createServer((request, response) => {
     const method = request.method ?? "GET"
@@ -161,6 +176,12 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     withSession()
 
     function withSession(): void {
+      if (operatorGuard && isOperatorPath({ pathname, mountPath: operatorMountPath })) {
+        const verdict = operatorGuard.verify(request)
+        if (verdict !== "granted") return refuseOperator({ response, verdict, guard: operatorGuard })
+        operatorRequests.add(request)
+      }
+
       const requestSession = resolveRequestSession({ request, secret, secureCookies })
       requestSessions.set(request, requestSession)
       if (requestSession.setCookies.length > 0) {
@@ -279,7 +300,7 @@ async function route(options: {
   if (method === "POST" && path === "/api/components/refresh") {
     return refreshComponents({ context, runtime })
   }
-  if (method === "GET" && path === "/api/operator/tables") {
+  if (method === "GET" && path === OPERATOR_TABLES_PATH) {
     return showOperatorTables({ context, liveTables })
   }
 
@@ -562,9 +583,6 @@ async function showOperatorTables(options: {
 }): Promise<void> {
   const { context, liveTables } = options
   if (!liveTables) return sendJson({ context, status: 404, body: { error: "Not found" } })
-  if (!isOperator(dashboardAuthorizationContext(context.request))) {
-    return sendJson({ context, status: 403, body: { error: "This request is not authorized" } })
-  }
 
   sendJson({ context, status: 200, body: { tables: await liveTables.tables() } })
 }
@@ -840,11 +858,12 @@ function createOperatorDashboardHandler(options: {
   runtime: SolidObjectsRuntime
   requestSessions: WeakMap<IncomingMessage, RequestSession>
   dashboardSessions: Map<string, Map<string, string>>
+  operatorRequests: WeakSet<IncomingMessage>
   options: ShuffleOperatorDashboardOptions
 }): NodeDashboardHandler {
   const dashboard = createDashboard({
     runtime: options.runtime,
-    mountPath: options.options.mountPath ?? "/solid-objects/dashboard",
+    mountPath: options.options.mountPath ?? DEFAULT_DASHBOARD_PATH,
     ...(options.options.access ? { access: options.options.access } : {}),
   })
   return createNodeDashboardHandler({
@@ -853,7 +872,10 @@ function createOperatorDashboardHandler(options: {
       const requestSession = options.requestSessions.get(request)
       if (!requestSession) throw new Error("request session is unavailable")
       return {
-        authorizationContext: dashboardAuthorizationContext(request),
+        authorizationContext: dashboardAuthorizationContext({
+          request,
+          operatorRequests: options.operatorRequests,
+        }),
         session: dashboardSession({
           sessions: options.dashboardSessions,
           sessionId: requestSession.sessionId,
@@ -861,6 +883,37 @@ function createOperatorDashboardHandler(options: {
       }
     },
   })
+}
+
+function isOperatorPath(options: { pathname: string; mountPath: string }): boolean {
+  const { pathname, mountPath } = options
+  if (pathname === OPERATOR_TABLES_PATH) return true
+
+  return pathname === mountPath || pathname.startsWith(`${mountPath}/`)
+}
+
+function refuseOperator(options: {
+  response: ServerResponse
+  verdict: OperatorVerdict
+  guard: OperatorGuard
+}): void {
+  const { response, verdict } = options
+  if (verdict === "throttled") {
+    response.writeHead(429, {
+      "content-type": "application/json; charset=utf-8",
+      "retry-after": "300",
+      "cache-control": "no-store",
+    })
+    response.end(JSON.stringify({ error: "Too many attempts. Wait a few minutes." }))
+    return
+  }
+
+  response.writeHead(401, {
+    "content-type": "application/json; charset=utf-8",
+    "www-authenticate": options.guard.challengeHeader,
+    "cache-control": "no-store",
+  })
+  response.end(JSON.stringify({ error: "This surface is for operators" }))
 }
 
 function dashboardSession(options: {
@@ -880,13 +933,11 @@ function dashboardSession(options: {
   }
 }
 
-function dashboardAuthorizationContext(request: IncomingMessage): { source: string } {
-  return { source: loopbackAddress(request.socket.remoteAddress) ? "cli" : "remote" }
-}
-
-function loopbackAddress(address: string | undefined): boolean {
-  if (address === "::1" || address === "127.0.0.1") return true
-  return address?.startsWith("::ffff:127.") ?? false
+function dashboardAuthorizationContext(options: {
+  request: IncomingMessage
+  operatorRequests: WeakSet<IncomingMessage>
+}): { source: string } {
+  return { source: options.operatorRequests.has(options.request) ? "operator" : "remote" }
 }
 
 function respondToUnhandledError(options: { response: ServerResponse; error: unknown }): void {
