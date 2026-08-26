@@ -18,7 +18,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "solid-objects": "^0.13.1",
+    "@sqlite.org/sqlite-wasm": "3.53.0-build1",
+    "signal-polyfill": "^0.2.2",
+    "solid-objects": "^0.14.3",
     "ws": "^8.18.3"
   },
   "devDependencies": {
