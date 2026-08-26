@@ -151,7 +151,7 @@ describe("vendored browser runtime", () => {
   })
 
   test("serves the WebAssembly binary so the browser can compile it", async () => {
-    const response = await server.client().fetch("/vendor/sqlite/sqlite3.wasm")
+    const response = await server.client().fetch("/vendor/sqlite/sqlite3.wasm", { method: "HEAD" })
 
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toBe("application/wasm")

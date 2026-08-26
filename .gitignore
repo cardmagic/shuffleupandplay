@@ -7,3 +7,5 @@ storage/
 *.sqlite3-shm
 .claude/*
 !.claude/skills/
+test-results/
+playwright-report/

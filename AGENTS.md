@@ -245,11 +245,48 @@ exception text. `LOBBY_MESSAGES` in `pages.ts` maps a code to player-facing text
 ```bash
 pnpm install
 SHUFFLE_SECRET="at-least-32-characters-long" pnpm start
-pnpm test
+pnpm test          # vitest, Node only
+pnpm test:browser  # playwright, real Chromium
 pnpm typecheck
 pnpm build
 pnpm doctor
 ```
+
+## The browser suite
+
+`pnpm test:browser` runs Playwright against a real Chromium. It covers what
+Node cannot reach: the WebAssembly runtime, origin storage, trusted pointer
+events, a rotated card's geometry, and what a second seat actually receives.
+
+- `playwright.config.ts` starts `test/browser-server.ts`, which serves the real
+  application on port 4181 with a temporary database and a fixed twelve card
+  deck. No test touches Archidekt.
+- Specs are `test/browser/*.browser.ts`. Vitest globs `*.test.ts`, so the two
+  suites never collect each other's files.
+- `test/browser/support.ts` holds the shared helpers: seating a player, loading
+  the deck, waiting for the mirror, and driving drags.
+
+| Spec | What only a browser can prove |
+| --- | --- |
+| `modules.browser.ts` | Every import is stamped, every module loads, no console error |
+| `mirror.browser.ts` | OPFS database, optimistic draw before the table answers, offline queue, reload, retry budget |
+| `counters.browser.ts` | Counter drags follow the pointer on a rotated card, and a redraw keeps every counter |
+| `hidden-information.browser.ts` | A second seat never receives the other's cards |
+| `fallback.browser.ts` | The table still updates when the socket never opens |
+
+**Gotchas:**
+
+- Card tools sit under the counter chips. Add a counter by dragging the palette
+  token (`dropCounterOn`), not by clicking the tool, or the chip intercepts the
+  click.
+- Press a counter on its `.counter-value`, not its centre. The centre is a
+  button, and `beginDrag` deliberately ignores a press on a button.
+- Wait for the queue to drain (`settle`) before a drag. A reconcile that lands
+  mid-drag redraws the seat underneath the pointer.
+- The palette drop uses `elementFromPoint`, so the card has to be inside the
+  viewport. The config uses a tall viewport for this.
+- Each test gets a fresh browser context, so origin storage starts empty and
+  the mirror rebuilds from the table.
 
 Environment: `SHUFFLE_SECRET` (required), `SHUFFLE_DATABASE_PATH`,
 `SHUFFLE_OPERATOR_DASHBOARD`, `SHUFFLE_PUBLIC_ORIGIN`, `PORT`, `NODE_ENV`.
@@ -272,12 +309,10 @@ Commander life totals and a command zone, undo, seat recovery tokens, the mobile
 segmented layout, richer Archidekt filtering and a keyboard-accessible card menu
 are specified but not built. Do not describe them as available.
 
-The browser mirror has no test that drives a real browser; this repository has
-no Playwright suite. `test/table-mirror.test.ts` covers the actor against a Node
-runtime, and `test/sync-ingest.test.ts` covers the server side. The WebAssembly
-adapter, the worker and the redraw were checked by hand in Chrome. Add a browser
-suite before changing the worker.
-
 A move can still be lost if the table refuses it for good: the outbox treats a
 400 or a 403 as delivered and drops it, and the high-water mark then hides the
 gap. Reloading the table redraws the true seat.
+
+Nothing asserts that a hand-written `/shared/` or `/vendor/` URL carries the
+stamp. The rewrite covers every import the application writes today, but a URL
+built at runtime would slip past it.
