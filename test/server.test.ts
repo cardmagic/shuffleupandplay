@@ -54,6 +54,33 @@ describe("asset fingerprints", () => {
     expect(response.headers.getSetCookie()).toEqual([])
   })
 
+  test("stamps the modules an asset imports, so a stale copy cannot load", async () => {
+    const client = server.client()
+    const html = await (await client.fetch("/", { headers: { accept: "text/html" } })).text()
+    const asset = /\/assets\/shuffle\.[a-f0-9]{12}\.js/.exec(html)?.[0] ?? ""
+
+    const source = await (await client.fetch(asset)).text()
+
+    expect(source).toMatch(/from "\/assets\/drag-math\.[a-f0-9]{12}\.js"/)
+    expect(source).toMatch(/from "\/assets\/morph\.[a-f0-9]{12}\.js"/)
+    expect(source).not.toContain('from "./drag-math.js"')
+    expect(source).not.toContain('from "./morph.js"')
+  })
+
+  test("serves an imported module immutably under its stamped name", async () => {
+    const client = server.client()
+    const html = await (await client.fetch("/", { headers: { accept: "text/html" } })).text()
+    const shuffle = /\/assets\/shuffle\.[a-f0-9]{12}\.js/.exec(html)?.[0] ?? ""
+    const source = await (await client.fetch(shuffle)).text()
+    const dependency = /\/assets\/drag-math\.[a-f0-9]{12}\.js/.exec(source)?.[0] ?? ""
+
+    const response = await client.fetch(dependency)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    expect(await response.text()).toContain("export function cardPoint")
+  })
+
   test("serves an unfingerprinted asset without creating a session", async () => {
     const response = await server.client().fetch("/assets/shuffle.js")
 

@@ -49,6 +49,7 @@ import {
   privacyPage,
   PRODUCT_DESCRIPTION,
   SITE_ORIGIN,
+  stampModuleImports,
   type LobbyErrorCode,
 } from "./render/pages.ts"
 import {
@@ -977,8 +978,13 @@ export async function serveStaticAsset(options: {
     return true
   }
 
-  if (prefix.startsWith("/vendor/") && MODULE_EXTENSIONS.has(extension)) {
-    response.end(rewriteBrowserSpecifiers(await readFile(filePath, "utf8")))
+  if (MODULE_EXTENSIONS.has(extension)) {
+    const source = await readFile(filePath, "utf8")
+    response.end(
+      prefix.startsWith("/vendor/")
+        ? rewriteBrowserSpecifiers(source)
+        : stampModuleImports(source),
+    )
     return true
   }
 

@@ -18,6 +18,8 @@ const ASSET_NAMES = [
   "application.css",
   "shuffle.js",
   "table-worker.js",
+  "drag-math.js",
+  "morph.js",
   "icon.svg",
   "apple-touch-icon.png",
   "icon-192.png",
@@ -25,19 +27,49 @@ const ASSET_NAMES = [
   "social-card.png",
 ] as const
 
+const RELATIVE_IMPORT_PATTERN = /(\bfrom\s+|\bimport\s+)(["'])\.\/([^"']+)\2/g
+
 export const SITE_ORIGIN = process.env.SHUFFLE_PUBLIC_ORIGIN ?? "https://shuffleupandplay.com"
+
+const digests = new Map<string, string>()
 
 export const ASSET_URLS: Record<string, string> = Object.fromEntries(
   ASSET_NAMES.map((name) => [name, fingerprintedPath(name)]),
 )
 
+export function moduleImports(source: string): string[] {
+  return [...source.matchAll(RELATIVE_IMPORT_PATTERN)].map((match) => match[3] as string)
+}
+
+export function stampModuleImports(source: string): string {
+  return source.replaceAll(RELATIVE_IMPORT_PATTERN, (match, keyword: string, _quote, name: string) => {
+    const stamped = ASSET_URLS[name]
+
+    return stamped ? `${keyword}"${stamped}"` : match
+  })
+}
+
+function assetDigest(name: string): string {
+  const cached = digests.get(name)
+  if (cached !== undefined) return cached
+
+  digests.set(name, "")
+  const source = readFileSync(resolve(PUBLIC_DIRECTORY, name))
+  const hash = createHash("sha256").update(source)
+  if (name.endsWith(".js")) {
+    for (const dependency of moduleImports(source.toString("utf8"))) {
+      hash.update(assetDigest(dependency))
+    }
+  }
+
+  const digest = hash.digest("hex").slice(0, 12)
+  digests.set(name, digest)
+  return digest
+}
+
 function fingerprintedPath(name: string): string {
-  const digest = createHash("sha256")
-    .update(readFileSync(resolve(PUBLIC_DIRECTORY, name)))
-    .digest("hex")
-    .slice(0, 12)
   const dot = name.lastIndexOf(".")
-  return `/assets/${name.slice(0, dot)}.${digest}${name.slice(dot)}`
+  return `/assets/${name.slice(0, dot)}.${assetDigest(name)}${name.slice(dot)}`
 }
 
 function absolute(path: string): string {
