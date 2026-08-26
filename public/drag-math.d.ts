@@ -12,3 +12,13 @@ export declare function dragPosition(options: {
   canvas: Corner
   offset: Point
 }): Corner
+
+export type CardFrame = {
+  center: Point
+  size: { width: number; height: number }
+  rotation: number
+}
+
+export declare function rotationFromTransform(transform: string | undefined): number
+
+export declare function cardPoint(options: { pointer: Point; frame: CardFrame }): Point

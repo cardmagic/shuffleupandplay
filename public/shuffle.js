@@ -3,7 +3,7 @@ import {
   SolidObjectsComponentRegistry,
 } from "/vendor/live/browser/index.js"
 import { renderComponent } from "/shared/server/render/components.ts"
-import { dragOffset, dragPosition } from "./drag-math.js"
+import { cardPoint, dragOffset, dragPosition, rotationFromTransform } from "./drag-math.js"
 import { morph } from "./morph.js"
 
 const MIRROR_COMPONENTS = ["player", "playerControls", "librarySearch"]
@@ -13,6 +13,7 @@ const FALLBACK_RETRY_MILLISECONDS = 3000
 const FALLBACK_TIMEOUT_MILLISECONDS = 25000
 const TOOLTIP_DELAY_MILLISECONDS = 90
 const TAP_SLOP_PIXELS = 10
+const COUNTER_GRAB = { x: 18, y: 12 }
 const DECK_COLORS = ["W", "U", "B", "R", "G", "C"]
 
 const game = document.querySelector("[data-game]")
@@ -461,18 +462,15 @@ function beginDrag(event, game) {
 
   const counter = event.target.closest(".counter-chip")
   if (counter && !event.target.closest("button")) {
-    const card = counter.closest(".battlefield-card")
+    const frame = cardFrame(counter.closest(".battlefield-card"))
+    const grab = cardPoint({ pointer: { x: event.clientX, y: event.clientY }, frame })
     drag = {
       kind: "counter",
       element: counter,
       instanceId: counter.dataset.instanceId,
       counterId: counter.dataset.counterId,
-      canvas: card.getBoundingClientRect(),
-      offset: dragOffset({
-        pointer: { x: event.clientX, y: event.clientY },
-        canvas: card.getBoundingClientRect(),
-        card: { left: counter.offsetLeft, top: counter.offsetTop },
-      }),
+      frame,
+      offset: { x: grab.x - counter.offsetLeft, y: grab.y - counter.offsetTop },
     }
     counter.setPointerCapture(event.pointerId)
     return
@@ -516,17 +514,36 @@ function moveDrag(event) {
     drag.moved = true
   }
 
-  const position = currentDragPosition(event)
+  const position = positionFor({ held: drag, event })
   drag.element.style.left = `${position.left}px`
   drag.element.style.top = `${position.top}px`
 }
 
-function currentDragPosition(event) {
-  return dragPosition({
-    pointer: { x: event.clientX, y: event.clientY },
-    canvas: drag.canvas,
-    offset: drag.offset,
-  })
+function positionFor(options) {
+  const { held, event } = options
+  const pointer = { x: event.clientX, y: event.clientY }
+  if (held.kind !== "counter") {
+    return dragPosition({ pointer, canvas: held.canvas, offset: held.offset })
+  }
+
+  const point = cardPoint({ pointer, frame: held.frame })
+  return {
+    left: Math.max(0, Math.round(point.x - held.offset.x)),
+    top: Math.max(0, Math.round(point.y - held.offset.y)),
+  }
+}
+
+function cardFrame(card) {
+  const rectangle = card.getBoundingClientRect()
+
+  return {
+    center: {
+      x: rectangle.left + rectangle.width / 2,
+      y: rectangle.top + rectangle.height / 2,
+    },
+    size: { width: card.offsetWidth, height: card.offsetHeight },
+    rotation: rotationFromTransform(window.getComputedStyle(card).transform),
+  }
 }
 
 function showCounterGhost(event, palette) {
@@ -563,22 +580,21 @@ function finishDrag(event, actorId) {
       ?.closest(".battlefield-card")
     if (!card) return
 
-    const rectangle = card.getBoundingClientRect()
+    const point = cardPoint({
+      pointer: { x: event.clientX, y: event.clientY },
+      frame: cardFrame(card),
+    })
     return void sendAction(actorId, {
       type: "addCounter",
       instanceId: card.dataset.instanceId,
       counterId: crypto.randomUUID(),
-      x: Math.max(0, Math.round(event.clientX - rectangle.left - 18)),
-      y: Math.max(0, Math.round(event.clientY - rectangle.top - 12)),
+      x: Math.max(0, Math.round(point.x - COUNTER_GRAB.x)),
+      y: Math.max(0, Math.round(point.y - COUNTER_GRAB.y)),
       label: "+1/+1",
     })
   }
 
-  const position = dragPosition({
-    pointer: { x: event.clientX, y: event.clientY },
-    canvas: current.canvas,
-    offset: current.offset,
-  })
+  const position = positionFor({ held: current, event })
 
   if (current.kind === "counter") {
     return void sendAction(actorId, {
