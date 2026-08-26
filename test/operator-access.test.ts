@@ -105,6 +105,67 @@ describe("an operator surface with a password", () => {
     expect(response.headers.get("www-authenticate")).toBeNull()
   })
 
+  test("never spends the guessing budget on a request that succeeds", async () => {
+    const started = await guarded()
+    const client = started.client()
+
+    const statuses: number[] = []
+    for (let request = 0; request < 40; request += 1) {
+      const response = await client.fetch(TABLES, {
+        headers: { authorization: basic(PASSWORD) },
+      })
+      statuses.push(response.status)
+    }
+
+    expect(new Set(statuses)).toEqual(new Set([200]))
+  })
+
+  test("lets an operator through after a wrong attempt or two", async () => {
+    const started = await guarded()
+    const client = started.client()
+
+    await client.fetch(TABLES, { headers: { authorization: basic("fat-fingered") } })
+    await client.fetch(TABLES, { headers: { authorization: basic("fat-fingered-again") } })
+    const response = await client.fetch(TABLES, { headers: { authorization: basic(PASSWORD) } })
+
+    expect(response.status).toBe(200)
+  })
+
+  test("loads every part of the dashboard in one visit", async () => {
+    const started = await guarded()
+    const client = started.client()
+    const authorization = basic(PASSWORD)
+
+    const page = await client.fetch(DASHBOARD, { headers: { accept: "text/html", authorization } })
+    const markup = await page.text()
+    const references = [...markup.matchAll(/(?:src|href)="(\/solid-objects\/[^"]+)"/g)].map(
+      (match) => match[1] as string,
+    )
+
+    expect(references.length).toBeGreaterThan(1)
+    for (const reference of references) {
+      const response = await client.fetch(reference, { headers: { authorization } })
+
+      expect(response.status, reference).toBe(200)
+    }
+  })
+
+  test("loads nothing the page's own policy would block", async () => {
+    const started = await guarded()
+    const client = started.client()
+    const authorization = basic(PASSWORD)
+
+    const page = await client.fetch(DASHBOARD, { headers: { accept: "text/html", authorization } })
+    const markup = await page.text()
+    const policy = page.headers.get("content-security-policy") ?? ""
+
+    expect(policy).toContain("script-src 'self'")
+    expect([...markup.matchAll(/<script[^>]*src="([^"]+)"/g)].map((match) => match[1])).not.toContain(
+      expect.stringMatching(/^https?:\/\//),
+    )
+    expect(markup).not.toContain("cdn.jsdelivr.net")
+  })
+
   test("stops guessing after a burst of wrong passwords", async () => {
     const started = await guarded()
     const client = started.client()
@@ -132,6 +193,49 @@ describe("an operator surface with a password", () => {
     })
 
     expect(response.status).toBe(429)
+  })
+})
+
+describe("counting attempts per client behind a proxy", () => {
+  test("never lets one guesser lock everybody else out", async () => {
+    const started = await guarded()
+    const client = started.client()
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await client.fetch(TABLES, {
+        headers: { authorization: basic(`guess-${attempt}`), "x-forwarded-for": "203.0.113.7" },
+      })
+    }
+
+    const guesser = await client.fetch(TABLES, {
+      headers: { authorization: basic(PASSWORD), "x-forwarded-for": "203.0.113.7" },
+    })
+    const other = await client.fetch(TABLES, {
+      headers: { authorization: basic(PASSWORD), "x-forwarded-for": "198.51.100.4" },
+    })
+
+    expect(guesser.status).toBe(429)
+    expect(other.status).toBe(200)
+  })
+
+  test("reads the client from the first entry the proxy forwarded", async () => {
+    const started = await guarded()
+    const client = started.client()
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await client.fetch(TABLES, {
+        headers: {
+          authorization: basic(`guess-${attempt}`),
+          "x-forwarded-for": "203.0.113.9, 10.0.0.1",
+        },
+      })
+    }
+
+    const same = await client.fetch(TABLES, {
+      headers: { authorization: basic(PASSWORD), "x-forwarded-for": "203.0.113.9, 10.0.0.2" },
+    })
+
+    expect(same.status).toBe(429)
   })
 })
 

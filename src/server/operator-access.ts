@@ -1,12 +1,13 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 import type { IncomingMessage } from "node:http"
 
-import { createRateLimiter, type RateLimiter } from "./rate-limit.ts"
-
 const REALM = "Shuffle Up and Play operators"
 const MINIMUM_PASSWORD_LENGTH = 16
-const ATTEMPT_LIMIT = 10
-const ATTEMPT_WINDOW_MILLISECONDS = 5 * 60 * 1_000
+const FAILURE_LIMIT = 10
+const FAILURE_WINDOW_MILLISECONDS = 5 * 60 * 1_000
+const MAXIMUM_TRACKED_CLIENTS = 10_000
+
+type FailureWindow = { windowStart: number; count: number }
 
 export type OperatorVerdict = "granted" | "challenge" | "throttled"
 
@@ -42,10 +43,7 @@ export function requireOperatorPassword(options: {
 
 export function createOperatorGuard(options: { password: string | undefined }): OperatorGuard {
   const password = options.password
-  const attempts: RateLimiter = createRateLimiter({
-    limit: ATTEMPT_LIMIT,
-    windowMilliseconds: ATTEMPT_WINDOW_MILLISECONDS,
-  })
+  const failures = new Map<string, FailureWindow>()
 
   return {
     challengeHeader: operatorRealmHeader(),
@@ -54,13 +52,61 @@ export function createOperatorGuard(options: { password: string | undefined }): 
         return loopbackAddress(request.socket.remoteAddress) ? "granted" : "challenge"
       }
 
-      const key = request.socket.remoteAddress ?? "unknown"
-      if (!attempts.allows({ key })) return "throttled"
-      if (!matchesPassword({ header: request.headers.authorization, password })) return "challenge"
+      const key = clientKey(request)
+      const now = Date.now()
+      if (failureCount({ failures, key, now }) >= FAILURE_LIMIT) return "throttled"
 
-      return "granted"
+      if (matchesPassword({ header: request.headers.authorization, password })) {
+        failures.delete(key)
+        return "granted"
+      }
+
+      recordFailure({ failures, key, now })
+      return "challenge"
     },
   }
+}
+
+export function clientKey(request: IncomingMessage): string {
+  const forwarded = request.headers["x-forwarded-for"]
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0]?.trim()
+  if (first) return first
+
+  return request.socket.remoteAddress ?? "unknown"
+}
+
+function failureCount(options: {
+  failures: Map<string, FailureWindow>
+  key: string
+  now: number
+}): number {
+  const window = options.failures.get(options.key)
+  if (!window) return 0
+  if (options.now - window.windowStart >= FAILURE_WINDOW_MILLISECONDS) {
+    options.failures.delete(options.key)
+    return 0
+  }
+
+  return window.count
+}
+
+function recordFailure(options: {
+  failures: Map<string, FailureWindow>
+  key: string
+  now: number
+}): void {
+  const { failures, key, now } = options
+  const window = failures.get(key)
+  if (window) {
+    window.count += 1
+    return
+  }
+
+  if (failures.size >= MAXIMUM_TRACKED_CLIENTS) {
+    const oldest = failures.keys().next().value
+    if (oldest !== undefined) failures.delete(oldest)
+  }
+  failures.set(key, { windowStart: now, count: 1 })
 }
 
 export function matchesPassword(options: {

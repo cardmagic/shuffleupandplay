@@ -864,6 +864,7 @@ function createOperatorDashboardHandler(options: {
   const dashboard = createDashboard({
     runtime: options.runtime,
     mountPath: options.options.mountPath ?? DEFAULT_DASHBOARD_PATH,
+    chartLibrary: { url: null },
     ...(options.options.access ? { access: options.options.access } : {}),
   })
   return createNodeDashboardHandler({
