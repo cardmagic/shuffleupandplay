@@ -71,6 +71,7 @@ export function createShuffleApplication(options: ShuffleRuntimeOptions): Shuffl
     authorizeDestroy: () => false,
     authorizeAdministration: ({ authorizationContext }) => isOperator(authorizationContext),
     authorizeSubscription: async ({ actorType, actorId, authorizationContext }) => {
+      if (authorizationContext === undefined) return isTableActorType(actorType)
       if (!authorizesActor({ actorType, actorId, authorizationContext })) return false
       if (actorType !== GameRoom.actorType) return true
 
@@ -175,7 +176,11 @@ function authorizesActor(options: {
   if (!isViewer(viewer)) return false
   if (viewer.roomCode !== options.actorId) return false
 
-  return options.actorType === GameRoom.actorType || options.actorType === MatchLog.actorType
+  return isTableActorType(options.actorType)
+}
+
+function isTableActorType(actorType: string): boolean {
+  return actorType === GameRoom.actorType || actorType === MatchLog.actorType
 }
 
 function isViewer(value: unknown): value is GameViewer {

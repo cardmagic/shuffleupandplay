@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs"
-import { stat } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { extname, join, normalize, resolve } from "node:path"
 
@@ -16,7 +16,7 @@ import { GameRoom, type GameViewer } from "../actors/game-room.ts"
 import { extractDeckId } from "../archidekt/deck-id.ts"
 import { generateRoomCode, normalizeRoomCode } from "../game/room-code.ts"
 import type { RoomPayload } from "../game/types.ts"
-import type { ShuffleApplication } from "../runtime.ts"
+import { isOperator, type ShuffleApplication } from "../runtime.ts"
 import {
   isRecord,
   PayloadTooLargeError,
@@ -27,8 +27,12 @@ import {
   sendRedirect,
   type RequestContext,
 } from "./http.ts"
+import { pollRevision, pollTimeoutMilliseconds, waitForTableChange } from "./live-poll.ts"
+import { createLiveTables, type LiveTablesView } from "./live-tables.ts"
 import { createRateLimiter, type RateLimiter } from "./rate-limit.ts"
 import { attachRealtime } from "./realtime.ts"
+import { rewriteBrowserSpecifiers, serveSharedModule } from "./shared-modules.ts"
+import { ingestSyncEnvelope, isSyncRejection, readSyncEnvelope } from "./sync-ingest.ts"
 import {
   componentTargetId,
   isComponentName,
@@ -67,14 +71,22 @@ const REJECTION_STATUSES: Record<string, number> = {
 const STATIC_ROOTS: Record<string, string> = {
   "/assets/": resolve(import.meta.dirname, "../../public"),
   "/vendor/live/": resolve(import.meta.dirname, "../../node_modules/solid-objects/dist"),
+  "/vendor/sqlite/": resolve(
+    import.meta.dirname,
+    "../../node_modules/@sqlite.org/sqlite-wasm/dist",
+  ),
 }
+
+const MODULE_EXTENSIONS = new Set([".js", ".mjs"])
 
 const FINGERPRINT_PATTERN = /^(.*)\.[a-f0-9]{12}(\.[a-z0-9]+)$/
 
 const CONTENT_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".map": "application/json; charset=utf-8",
+  ".wasm": "application/wasm",
 }
 
 export type ShuffleServerOptions = {
@@ -104,6 +116,7 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     joinTable: createRateLimiter({ limit: 20, windowMilliseconds: 60_000 }),
     loadDeck: createRateLimiter({ limit: 20, windowMilliseconds: 60_000 }),
     searchDecks: createRateLimiter({ limit: 30, windowMilliseconds: 60_000 }),
+    syncMoves: createRateLimiter({ limit: 600, windowMilliseconds: 60_000 }),
   }
   const requestSessions = new WeakMap<IncomingMessage, RequestSession>()
   const dashboardSessions = new Map<string, Map<string, string>>()
@@ -115,6 +128,7 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
         options: options.operatorDashboard,
       })
     : undefined
+  const liveTables = options.operatorDashboard ? createLiveTables({ runtime }) : undefined
 
   const server = createServer((request, response) => {
     const method = request.method ?? "GET"
@@ -130,7 +144,7 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     }
 
     if (readMethod) {
-      void serveStaticAsset({ method, pathname, response }).then((served) => {
+      void serveBrowserModule({ method, pathname, response }).then((served) => {
         if (served) return
         withSession()
       })
@@ -151,7 +165,15 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
           respondToUnhandledError({ response, error })
           return
         }
-        handle({ request, response, application, runtime, requestSession, limits }).catch((handleError) => {
+        handle({
+          request,
+          response,
+          application,
+          runtime,
+          requestSession,
+          limits,
+          liveTables,
+        }).catch((handleError) => {
           respondToUnhandledError({ response, error: handleError })
         })
       }
@@ -177,6 +199,7 @@ export function createShuffleServer(options: ShuffleServerOptions): ShuffleServe
     close: async () => {
       await realtime.close()
       await new Promise<void>((resolveClose) => server.close(() => resolveClose()))
+      liveTables?.close()
       dashboardSessions.clear()
     },
   }
@@ -189,8 +212,9 @@ async function handle(options: {
   runtime: SolidObjectsRuntime
   requestSession: RequestSession
   limits: RequestLimits
+  liveTables: LiveTablesView | undefined
 }): Promise<void> {
-  const { request, response, application, runtime, requestSession, limits } = options
+  const { request, response, application, runtime, requestSession, limits, liveTables } = options
   const url = new URL(request.url ?? "/", requestOrigin(request))
 
   const context: RequestContext = {
@@ -203,7 +227,7 @@ async function handle(options: {
   }
 
   try {
-    await route({ context, application, runtime, limits })
+    await route({ context, application, runtime, limits, liveTables })
   } catch (error) {
     respondToError({ context, error })
   }
@@ -214,8 +238,9 @@ async function route(options: {
   application: ShuffleApplication
   runtime: SolidObjectsRuntime
   limits: RequestLimits
+  liveTables: LiveTablesView | undefined
 }): Promise<void> {
-  const { context, application, runtime, limits } = options
+  const { context, application, runtime, limits, liveTables } = options
   const path = context.url.pathname
   const method = context.method
 
@@ -247,20 +272,32 @@ async function route(options: {
   if (method === "POST" && path === "/api/components/refresh") {
     return refreshComponents({ context, runtime })
   }
+  if (method === "GET" && path === "/api/operator/tables") {
+    return showOperatorTables({ context, liveTables })
+  }
 
   const spaceMatch =
-    /^\/api\/(?:tables|spaces)\/([A-Za-z0-9]{1,6})\/(join|state|deck|actions)$/.exec(path)
+    /^\/api\/(?:tables|spaces)\/([A-Za-z0-9]{1,6})\/(join|state|changes|deck|actions|sync)$/.exec(
+      path,
+    )
   if (spaceMatch) {
     const roomCode = normalizeRoomCode(spaceMatch[1])
     const segment = spaceMatch[2]
     if (method === "POST" && segment === "join") return joinSpace({ context, runtime, roomCode })
     if (method === "GET" && segment === "state") return showState({ context, runtime, roomCode })
+    if (method === "GET" && segment === "changes") {
+      return showChanges({ context, runtime, roomCode })
+    }
     if (method === "POST" && segment === "deck") {
       if (!allows({ context, limiter: limits.loadDeck })) return sendTooManyRequests(context)
       return loadDeck({ context, runtime, roomCode })
     }
     if (method === "POST" && segment === "actions") {
       return applyAction({ context, runtime, roomCode })
+    }
+    if (method === "POST" && segment === "sync") {
+      if (!allows({ context, limiter: limits.syncMoves })) return sendTooManyRequests(context)
+      return receiveSyncedMove({ context, runtime, roomCode })
     }
   }
 
@@ -274,6 +311,7 @@ type RequestLimits = {
   joinTable: RateLimiter
   loadDeck: RateLimiter
   searchDecks: RateLimiter
+  syncMoves: RateLimiter
 }
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/
@@ -511,6 +549,48 @@ async function showState(options: {
   sendJson({ context, status: 200, body: payload })
 }
 
+async function showOperatorTables(options: {
+  context: RequestContext
+  liveTables: LiveTablesView | undefined
+}): Promise<void> {
+  const { context, liveTables } = options
+  if (!liveTables) return sendJson({ context, status: 404, body: { error: "Not found" } })
+  if (!isOperator(dashboardAuthorizationContext(context.request))) {
+    return sendJson({ context, status: 403, body: { error: "This request is not authorized" } })
+  }
+
+  sendJson({ context, status: 200, body: { tables: await liveTables.tables() } })
+}
+
+async function showChanges(options: {
+  context: RequestContext
+  runtime: SolidObjectsRuntime
+  roomCode: string
+}): Promise<void> {
+  const { context, runtime, roomCode } = options
+  const payload = await projectRoom({ runtime, roomCode, sessionId: context.sessionId })
+  if (!payload?.space || !payload.currentPlayerId) {
+    return sendJson({ context, status: 403, body: { error: "You do not hold a seat at this table" } })
+  }
+
+  const abortController = new AbortController()
+  context.request.once("close", () => abortController.abort())
+
+  const envelope = await waitForTableChange({
+    runtime,
+    roomCode,
+    viewer: viewerFor(options),
+    sinceRevision: pollRevision(context.url.searchParams.get("since")),
+    timeoutMilliseconds: pollTimeoutMilliseconds(context.url.searchParams.get("timeout")),
+    abortSignal: abortController.signal,
+  })
+
+  if (context.response.writableEnded) return
+  if (!envelope) return sendEmpty({ context, status: 204 })
+
+  sendJson({ context, status: 200, body: envelope })
+}
+
 async function loadDeck(options: {
   context: RequestContext
   runtime: SolidObjectsRuntime
@@ -562,6 +642,28 @@ async function applyAction(options: {
 
   await reference.applyAction({ action, sessionId: context.sessionId })
   await respondWithRoom({ context, runtime, roomCode, status: 200 })
+}
+
+async function receiveSyncedMove(options: {
+  context: RequestContext
+  runtime: SolidObjectsRuntime
+  roomCode: string
+}): Promise<void> {
+  const { context, runtime, roomCode } = options
+  const payload = await projectRoom({ runtime, roomCode, sessionId: context.sessionId })
+  if (!payload?.space || !payload.currentPlayerId) {
+    return sendJson({ context, status: 403, body: { error: "You do not hold a seat at this table" } })
+  }
+
+  const body = await readBody(context.request)
+  const envelope = readSyncEnvelope({ body, roomCode, sessionId: context.sessionId })
+  if (isSyncRejection(envelope)) {
+    return sendJson({ context, status: 400, body: { error: envelope.reason } })
+  }
+
+  await ingestSyncEnvelope({ runtime, envelope })
+
+  sendJson({ context, status: 202, body: { status: "accepted" } })
 }
 
 async function searchDecks(options: {
@@ -792,7 +894,8 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "worker-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https://cards.scryfall.io https://storage.googleapis.com",
@@ -826,6 +929,16 @@ export function applySecurityHeaders(options: {
   }
 }
 
+async function serveBrowserModule(options: {
+  method: string
+  pathname: string
+  response: ServerResponse
+}): Promise<boolean> {
+  if (await serveSharedModule(options)) return true
+
+  return serveStaticAsset(options)
+}
+
 export async function serveStaticAsset(options: {
   method: string
   pathname: string
@@ -852,14 +965,20 @@ export async function serveStaticAsset(options: {
     return false
   }
 
+  const extension = extname(filePath)
   response.writeHead(200, {
-    "content-type": CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream",
+    "content-type": CONTENT_TYPES[extension] ?? "application/octet-stream",
     "cache-control": match
       ? "public, max-age=31536000, immutable"
       : "public, max-age=300, must-revalidate",
   })
   if (method === "HEAD") {
     response.end()
+    return true
+  }
+
+  if (prefix.startsWith("/vendor/") && MODULE_EXTENSIONS.has(extension)) {
+    response.end(rewriteBrowserSpecifiers(await readFile(filePath, "utf8")))
     return true
   }
 

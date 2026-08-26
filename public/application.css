@@ -1217,6 +1217,17 @@ button:disabled,
 .connection-status[data-state="offline"] .connection-dot { background: var(--danger); }
 .connection-status[data-state="offline"] { color: #f0b4a6; }
 
+.queued-moves {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.queued-moves[hidden] { display: none; }
+
 .toast-region {
   position: fixed;
   left: 50%;

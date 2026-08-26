@@ -12,6 +12,7 @@ import { MatchLog } from "./match-log.ts"
 import { parseAction } from "../game/action.ts"
 import { applyPlayerAction, buildPlayer } from "../game/player.ts"
 import {
+  broadcastObservables,
   isPlayerInRoom,
   playerForSession,
   roomPayload,
@@ -44,7 +45,7 @@ type DeckEffectArguments = {
 
 export class GameRoom extends Actor {
   static override readonly actorType = "GameRoom"
-  static override readonly stateVersion = 5
+  static override readonly stateVersion = 6
   static override readonly migrations = [
     {
       from: 1,
@@ -88,16 +89,34 @@ export class GameRoom extends Actor {
         return { ...state, room: { idleSweepAt: null, ...room } }
       },
     },
+    {
+      from: 5,
+      to: 6,
+      migrate: (state: JsonObject): JsonObject => {
+        const room = state.room
+        if (!isRecord(room) || !Array.isArray(room.players)) return state
+
+        return {
+          ...state,
+          room: {
+            ...room,
+            players: room.players.map((player) =>
+              isRecord(player) ? { appliedMove: 0, ...player } : player,
+            ),
+          },
+        }
+      },
+    },
   ]
 
   static override readonly payloads = {
     game: (actor: GameRoom, viewer: GameViewer): RoomPayload => {
       const room = actor.room
-      if (!room) return { space: null, currentPlayerId: null }
-      if (!isPlayerInRoom({ room, sessionId: viewer.sessionId })) {
-        return { space: null, currentPlayerId: null }
-      }
-      return roomPayload({ room, sessionId: viewer.sessionId })
+      const sessionId = seatedSessionId(viewer)
+      if (!room || !sessionId) return NO_ROOM
+      if (!isPlayerInRoom({ room, sessionId })) return NO_ROOM
+
+      return roomPayload({ room, sessionId })
     },
   } satisfies PayloadBroadcasts<GameRoom, GameViewer>
 
@@ -113,12 +132,11 @@ export class GameRoom extends Actor {
 
   override observables(): Record<string, unknown> {
     const seats = this.room ? seatFingerprints(this.room) : []
+    const broadcast = broadcastObservables(this.room)
 
     return {
-      version: broadcastValue(this.room?.version ?? 0),
-      lifeTotals: broadcastValue(
-        Object.fromEntries(seats.map((seat) => [String(seat.seat), seat.life])),
-      ),
+      version: broadcastValue(broadcast.version),
+      lifeTotals: broadcastValue(broadcast.lifeTotals),
       seatOne: broadcastInvalidation(seats.find((seat) => seat.seat === 1) ?? null),
       seatTwo: broadcastInvalidation(seats.find((seat) => seat.seat === 2) ?? null),
     }
@@ -252,7 +270,11 @@ export class GameRoom extends Actor {
     this.#log({ event: "deckFailed", detail: String(options.error.message ?? "unknown") })
   }
 
-  applyAction(options: { action: JsonObject; sessionId: string }): "applied" {
+  applyAction(options: {
+    action: JsonObject
+    sessionId: string
+    moveNumber?: number
+  }): "applied" {
     const room = this.#requireRoom()
     const player = this.#requirePlayer({ room, sessionId: options.sessionId })
     const action = parseAction(options.action)
@@ -263,7 +285,10 @@ export class GameRoom extends Actor {
     }
 
     const updated = applyPlayerAction({ player, action })
-    this.#replacePlayer({ room, player: updated })
+    this.#replacePlayer({
+      room,
+      player: { ...updated, appliedMove: advancedMove({ player, moveNumber: options.moveNumber }) },
+    })
     this.#armIdleSweep()
     this.commitAction("recordActionMetric", {
       roomCode: room.code,
@@ -350,6 +375,23 @@ export class GameRoom extends Actor {
 }
 
 export type { PlayerSummary }
+
+const NO_ROOM: RoomPayload = { space: null, currentPlayerId: null }
+
+function advancedMove(options: { player: Player; moveNumber: number | undefined }): number {
+  const { moveNumber } = options
+  if (typeof moveNumber !== "number" || !Number.isSafeInteger(moveNumber)) {
+    return options.player.appliedMove
+  }
+
+  return Math.max(options.player.appliedMove, moveNumber)
+}
+
+function seatedSessionId(viewer: GameViewer | undefined): string | null {
+  if (!viewer || typeof viewer.sessionId !== "string") return null
+
+  return viewer.sessionId.length > 0 ? viewer.sessionId : null
+}
 
 function normalizedName(options: {
   value: unknown

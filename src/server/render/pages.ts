@@ -17,6 +17,7 @@ const PUBLIC_DIRECTORY = resolve(import.meta.dirname, "../../../public")
 const ASSET_NAMES = [
   "application.css",
   "shuffle.js",
+  "table-worker.js",
   "icon.svg",
   "apple-touch-icon.png",
   "icon-192.png",
@@ -284,6 +285,7 @@ export function gamePage(options: {
   data-table-code="${attribute(options.roomCode)}"
   data-current-player-id="${attribute(options.payload.currentPlayerId ?? "")}"
   data-seat="${options.seat}"
+  data-worker-url="${attribute(ASSET_URLS["table-worker.js"])}"
   data-components="${jsonAttribute(declarations)}"
 >
   <section class="topbar-live-meta panel">
@@ -396,6 +398,7 @@ function connectionStatus(): string {
   return `<p class="connection-status" data-connection-status data-state="connecting" role="status" aria-live="polite">
     <span class="connection-dot" aria-hidden="true"></span>
     <span data-connection-label>Connecting…</span>
+    <span class="queued-moves" data-queued-moves role="status" aria-live="polite" hidden></span>
   </p>`
 }
 

@@ -48,6 +48,7 @@ export type Player = {
   graveyard: Card[]
   exile: Card[]
   isSearchingDeck: boolean
+  appliedMove: number
 }
 
 export type Room = {
@@ -84,6 +85,7 @@ export type PublicPlayer = {
   graveyard: PublicCard[]
   exile: PublicCard[]
   isSearchingDeck: boolean
+  appliedMove: number
 }
 
 export type PublicRoom = {

@@ -28,6 +28,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /app/dist ./dist
 COPY public ./public
+COPY src ./src
 
 RUN mkdir -p /app/storage && chown -R node:node /app
 

@@ -67,6 +67,20 @@ export function playerSummaries(room: Room): PlayerSummary[] {
   }))
 }
 
+export interface BroadcastObservables {
+  version: number
+  lifeTotals: Record<string, number>
+}
+
+export function broadcastObservables(room: Room | null): BroadcastObservables {
+  const seats = room ? seatFingerprints(room) : []
+
+  return {
+    version: room?.version ?? 0,
+    lifeTotals: Object.fromEntries(seats.map((seat) => [String(seat.seat), seat.life])),
+  }
+}
+
 export function seatFingerprints(room: Room): SeatFingerprint[] {
   return playerSummaries(room).map((summary) => {
     const player = room.players.find((candidate) => candidate.seat === summary.seat)
@@ -104,6 +118,7 @@ function publicPlayer(options: { player: Player; sessionId: string | null }): Pu
     graveyard: player.graveyard,
     exile: player.exile,
     isSearchingDeck: player.isSearchingDeck,
+    appliedMove: player.appliedMove,
     hand: visible ? player.hand : hiddenCards({ player, zone: "hand" }),
     library: visible ? player.library : hiddenCards({ player, zone: "library" }),
   }

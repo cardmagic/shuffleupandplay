@@ -42,6 +42,7 @@ export function buildPlayer(options: BuildPlayerOptions): Player {
     graveyard: [],
     exile: [],
     isSearchingDeck: false,
+    appliedMove: 0,
   }
 }
 
@@ -239,7 +240,7 @@ function addCounter(options: {
       if (card.instanceId !== action.instanceId) return card
 
       const counter: CardCounter = {
-        id: randomness.identifier(),
+        id: action.counterId ?? randomness.identifier(),
         label,
         value: 0,
         ...freeCounterPosition({ requested, taken: card.counters }),

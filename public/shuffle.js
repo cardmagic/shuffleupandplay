@@ -2,16 +2,31 @@ import {
   SolidObjectsBrowserClient,
   SolidObjectsComponentRegistry,
 } from "/vendor/live/browser/index.js"
+import { renderComponent } from "/shared/server/render/components.ts"
 import { dragOffset, dragPosition } from "./drag-math.js"
 import { morph } from "./morph.js"
 
+const MIRROR_COMPONENTS = ["player", "playerControls", "librarySearch"]
+const SETTLE_INTERVAL_MILLISECONDS = 1000
+const FALLBACK_DELAY_MILLISECONDS = 6000
+const FALLBACK_RETRY_MILLISECONDS = 3000
+const FALLBACK_TIMEOUT_MILLISECONDS = 25000
+const TOOLTIP_DELAY_MILLISECONDS = 90
+const TAP_SLOP_PIXELS = 10
+const DECK_COLORS = ["W", "U", "B", "R", "G", "C"]
+
 const game = document.querySelector("[data-game]")
 if (game) start(game)
+
+let mirror = null
 
 function start(game) {
   const actorType = game.dataset.tableType
   const actorId = game.dataset.tableCode
   const declarations = JSON.parse(game.dataset.components)
+  const seat = Number(game.dataset.seat)
+  const currentPlayerId = game.dataset.currentPlayerId
+  const workerUrl = game.dataset.workerUrl
 
   const registry = new SolidObjectsComponentRegistry({
     refresh: async ({ actorType, actorId, instanceId, revision, batch, components, signal }) => {
@@ -26,6 +41,8 @@ function start(game) {
       return response.json()
     },
     apply: ({ component, rendered }) => {
+      if (mirror?.owns(component.target)) return
+
       const target = document.getElementById(component.target)
       if (!target) return
       if (component.strategy === "morph") return morph(target, rendered)
@@ -51,29 +68,48 @@ function start(game) {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
   url.searchParams.set("roomCode", actorId)
 
+  const fallback = createChangeFallback({ actorId, registry })
+
   const client = new SolidObjectsBrowserClient({
     url,
     createWebSocket: (target) => {
       const socket = new WebSocket(target)
-      socket.addEventListener("open", () => setConnectionState("connected"))
-      socket.addEventListener("close", () => setConnectionState("reconnecting"))
+      socket.addEventListener("open", () => {
+        fallback.stop()
+        setConnectionState("connected")
+      })
+      socket.addEventListener("close", () => {
+        fallback.startLater()
+        setConnectionState("reconnecting")
+      })
       return socket
     },
     onInvalidation: (envelope) => {
+      fallback.observe(envelope)
       setConnectionState("connected")
       registry.invalidate(envelope)
+      void mirror?.reconcile()
     },
     onPayload: () => {
       setConnectionState("connected")
     },
-    onError: () => setConnectionState("reconnecting"),
+    onError: () => {
+      fallback.startLater()
+      setConnectionState("reconnecting")
+    },
   })
+
+  fallback.startLater()
 
   window.addEventListener("offline", () => setConnectionState("offline"))
   window.addEventListener("online", () => setConnectionState("reconnecting"))
 
   client.subscribe({ actorType, actorId, payloads: ["game"] })
   client.connect()
+
+  void startMirror({ actorId, seat, currentPlayerId, workerUrl }).then((started) => {
+    mirror = started
+  })
 
   wireActions(game, actorId)
   wireDeckForms(game, actorId)
@@ -83,7 +119,182 @@ function start(game) {
   wireTooltips()
 }
 
-const TOOLTIP_DELAY_MILLISECONDS = 90
+async function startMirror({ actorId, seat, currentPlayerId, workerUrl }) {
+  if (!workerUrl || !currentPlayerId || !window.Worker) return null
+
+  try {
+    const worker = new Worker(workerUrl, { type: "module" })
+    const send = workerSender(worker)
+    await send({ command: "start", roomCode: actorId, playerId: currentPlayerId })
+
+    const targets = new Set(MIRROR_COMPONENTS.map((name) => `component-${name}-${seat}`))
+    let payload = await fetchState(actorId)
+    const own = ownPlayer({ payload, currentPlayerId })
+    if (!own) throw new Error("this session holds no seat at the table")
+
+    let settling = 0
+
+    const mirror = {
+      owns: (target) => targets.has(target),
+      apply: async (action) => {
+        const state = await send({ command: "apply", action })
+        draw({ state, payload, actorId, seat })
+        settle()
+        return state
+      },
+      reconcile: async () => {
+        payload = await fetchState(actorId)
+        const player = ownPlayer({ payload, currentPlayerId })
+        if (!player) return null
+
+        const state = await send({ command: "reconcile", player })
+        draw({ state, payload, actorId, seat })
+        if (state.pendingCount === 0) stopSettling()
+        return state
+      },
+    }
+
+    function settle() {
+      if (settling) return
+      settling = window.setInterval(() => {
+        void mirror.reconcile().catch(() => undefined)
+      }, SETTLE_INTERVAL_MILLISECONDS)
+    }
+
+    function stopSettling() {
+      window.clearInterval(settling)
+      settling = 0
+    }
+
+    const seeded = await send({ command: "seed", player: own })
+    draw({ state: seeded, payload, actorId, seat, currentPlayerId })
+    return mirror
+  } catch {
+    showToast("This table runs without a local move queue.")
+    return null
+  }
+}
+
+function workerSender(worker) {
+  return (request) =>
+    new Promise((resolve, reject) => {
+      const requestId = crypto.randomUUID()
+      const onMessage = (event) => {
+        if (event.data.requestId !== requestId) return
+        worker.removeEventListener("message", onMessage)
+        if (event.data.ok) return resolve(event.data.value)
+        reject(new Error(event.data.message))
+      }
+      worker.addEventListener("message", onMessage)
+      worker.postMessage({ requestId, ...request })
+    })
+}
+
+async function fetchState(actorId) {
+  const response = await fetch(`/api/tables/${actorId}/state`, {
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+  })
+  if (!response.ok) throw new Error(`the table state is unavailable (${response.status})`)
+  return response.json()
+}
+
+function ownPlayer({ payload, currentPlayerId }) {
+  return payload?.space?.players.find((player) => player.id === currentPlayerId) ?? null
+}
+
+function draw({ state, payload, actorId, seat }) {
+  if (!state?.player || !payload?.space) return
+
+  const context = {
+    payload: {
+      ...payload,
+      space: {
+        ...payload.space,
+        players: payload.space.players.map((player) =>
+          player.id === state.player.id ? state.player : player,
+        ),
+      },
+    },
+    roomCode: actorId,
+    seat,
+    shareUrl: window.location.href,
+  }
+
+  for (const name of MIRROR_COMPONENTS) {
+    const target = document.getElementById(`component-${name}-${seat}`)
+    if (!target) continue
+    morph(target, renderComponent({ name, key: String(seat), context }))
+  }
+
+  showQueuedMoves(state.pendingCount)
+}
+
+function showQueuedMoves(pendingCount) {
+  const element = document.querySelector("[data-queued-moves]")
+  if (!element) return
+
+  element.hidden = pendingCount === 0
+  element.textContent = pendingCount === 1 ? "1 move waiting" : `${pendingCount} moves waiting`
+}
+
+function createChangeFallback({ actorId, registry }) {
+  let revision = "0"
+  let running = false
+  let timer = 0
+
+  const observe = (envelope) => {
+    if (BigInt(envelope.revision) > BigInt(revision)) revision = String(envelope.revision)
+  }
+
+  const stop = () => {
+    window.clearTimeout(timer)
+    timer = 0
+    running = false
+  }
+
+  const startLater = () => {
+    if (running || timer) return
+    timer = window.setTimeout(() => {
+      timer = 0
+      running = true
+      void poll()
+    }, FALLBACK_DELAY_MILLISECONDS)
+  }
+
+  const poll = async () => {
+    while (running) {
+      const waited = await pollOnce()
+      if (!running) return
+      if (waited) continue
+
+      await new Promise((resolve) => window.setTimeout(resolve, FALLBACK_RETRY_MILLISECONDS))
+    }
+  }
+
+  const pollOnce = async () => {
+    const query = `since=${encodeURIComponent(revision)}&timeout=${FALLBACK_TIMEOUT_MILLISECONDS}`
+    try {
+      const response = await fetch(`/api/tables/${actorId}/changes?${query}`, {
+        credentials: "same-origin",
+        headers: { accept: "application/json" },
+      })
+      if (response.status === 204) return true
+      if (!response.ok) return false
+
+      const envelope = await response.json()
+      observe(envelope)
+      registry.invalidate(envelope)
+      void mirror?.reconcile()
+      setConnectionState("connected")
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  return { observe, stop, startLater }
+}
 
 function wireTooltips() {
   let element = null
@@ -204,6 +415,22 @@ function wireActions(game, actorId) {
 }
 
 async function sendAction(actorId, action, gestureKey = newGestureKey()) {
+  if (mirror) return queueAction(action)
+
+  return postAction(actorId, action, gestureKey)
+}
+
+async function queueAction(action) {
+  try {
+    await mirror.apply(action)
+    return true
+  } catch {
+    showToast("That action was not accepted. Try again.")
+    return false
+  }
+}
+
+async function postAction(actorId, action, gestureKey) {
   const response = await fetch(`/api/tables/${actorId}/actions`, {
     method: "POST",
     credentials: "same-origin",
@@ -221,9 +448,6 @@ async function sendAction(actorId, action, gestureKey = newGestureKey()) {
 function newGestureKey() {
   return crypto.randomUUID()
 }
-
-const TAP_SLOP_PIXELS = 10
-const DECK_COLORS = ["W", "U", "B", "R", "G", "C"]
 
 let drag = null
 
@@ -343,6 +567,7 @@ function finishDrag(event, actorId) {
     return void sendAction(actorId, {
       type: "addCounter",
       instanceId: card.dataset.instanceId,
+      counterId: crypto.randomUUID(),
       x: Math.max(0, Math.round(event.clientX - rectangle.left - 18)),
       y: Math.max(0, Math.round(event.clientY - rectangle.top - 12)),
       label: "+1/+1",

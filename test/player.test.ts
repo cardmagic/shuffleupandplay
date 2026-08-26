@@ -332,6 +332,7 @@ describe("buildPlayer", () => {
       graveyard: [],
       exile: [],
       isSearchingDeck: false,
+      appliedMove: 0,
     })
   })
 })

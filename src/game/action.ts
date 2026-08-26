@@ -22,7 +22,14 @@ export type GameAction =
   | { type: "adjustLife"; delta: number }
   | { type: "resetLife" }
   | { type: "setLife"; value: number }
-  | { type: "addCounter"; instanceId: string; x: number; y: number; label?: string }
+  | {
+      type: "addCounter"
+      instanceId: string
+      x: number
+      y: number
+      label?: string
+      counterId?: string
+    }
   | { type: "moveCounter"; instanceId: string; counterId: string; x: number; y: number }
   | { type: "updateCounterValue"; instanceId: string; counterId: string; delta: number }
 
@@ -109,16 +116,18 @@ const BUILDERS: Record<GameActionType, Builder> = {
     const instanceId = textIdentifier(attributes.instanceId)
     if (!instanceId) return null
     if (!isFiniteNumber(attributes.x) || !isFiniteNumber(attributes.y)) return null
-    if (attributes.label === undefined) {
-      return { type: "addCounter", instanceId, x: attributes.x, y: attributes.y }
-    }
-    if (typeof attributes.label !== "string") return null
+    if (attributes.label !== undefined && typeof attributes.label !== "string") return null
+    if (attributes.counterId !== undefined && !textIdentifier(attributes.counterId)) return null
+
     return {
       type: "addCounter",
       instanceId,
       x: attributes.x,
       y: attributes.y,
-      label: attributes.label,
+      ...(attributes.label === undefined ? {} : { label: attributes.label }),
+      ...(attributes.counterId === undefined
+        ? {}
+        : { counterId: String(attributes.counterId) }),
     }
   },
   moveCounter: (attributes) => {

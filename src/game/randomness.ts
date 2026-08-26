@@ -1,12 +1,10 @@
-import { randomUUID } from "node:crypto"
-
 export interface Randomness {
   identifier(): string
   shuffle<Item>(items: readonly Item[]): Item[]
 }
 
 export const defaultRandomness: Randomness = {
-  identifier: () => randomUUID(),
+  identifier: () => crypto.randomUUID(),
   shuffle: (items) => {
     const shuffled = [...items]
     for (let index = shuffled.length - 1; index > 0; index -= 1) {
