@@ -29,7 +29,7 @@ that committed state, an accepted asynchronous action, an unfinished effect, and
 a scheduled reminder all survive.
 
 Contributors should start with [AGENTS.md](AGENTS.md), which covers the
-architecture, the state model, and the traps worth knowing.
+architecture, the state model, and the known traps.
 
 ## Setup
 
