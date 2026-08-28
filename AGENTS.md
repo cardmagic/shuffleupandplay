@@ -93,7 +93,7 @@ The browser runs some of the same TypeScript the server runs. There is still no
 build step. `src/server/shared-modules.ts` removes the types at request time
 with Node's own `stripTypeScriptTypes` and serves the result as JavaScript, so
 one file is the single source for both sides. `tsconfig.json` sets
-`erasableSyntaxOnly`, which is what makes every module strippable.
+`erasableSyntaxOnly`, so every module is strippable.
 
 - `/shared/<path>` serves an allowlisted module from `src/`. The list is a `Set`
   of exact paths. A path that is not on the list is a 404.
@@ -172,8 +172,8 @@ queued move at or below that number and replays the rest.
   the queued moves, and the high-water mark then hides the loss, because a later
   move that does land advances the mark past the ones that did not.
 - The mirror reconciles on a socket invalidation, on a long-poll envelope, and
-  on a short timer while moves are queued. The timer matters: a socket that
-  reconnects without replaying leaves the queue stuck otherwise.
+  on a short timer while moves are queued. The timer is necessary: a socket that
+  reconnects without replaying leaves the queue stuck.
 - The runtime uses `workerCount: 0`. The mirror has no async messages, and an
   idle polling role in a tab costs battery. Add a worker if you add `send()` or
   a reminder.
@@ -230,8 +230,8 @@ need rewriting.
   with content it was never built against.
 - An unstamped URL still serves, so a hand-typed one works while developing, but
   it answers `Cache-Control: no-cache`. A URL that does not name its own content
-  is never reusable from a cache without checking, so the stale-pairing bug
-  cannot come back through a URL the rewrite did not see.
+  cannot be reused from a cache without a check, so the stale-pairing bug cannot
+  return through a URL the rewrite did not see.
 - `test/shared-modules.test.ts` fails if any served asset names a `/shared/` or
   `/vendor/` URL without a stamp. The rewrite covers imports; the guard covers a
   URL written by hand, which the rewrite never sees.
@@ -251,8 +251,8 @@ holds no code, no name, and no UUID, against a table with a loaded deck.
 
 The operator dashboard is not an alternative here. Its instance detail page
 runs `SELECT *` on the instances table, and for this application that column is
-the game state: both players' hands, libraries and session ids. Read-only does
-not help, because the leak is in reading.
+the game state: both players' hands, libraries and session ids. The read-only
+mode does not help, because the read itself exposes the state.
 
 The answer is cached for five seconds. It counts rows, so a public page without
 a cache would let a crowd drive the database.
@@ -286,8 +286,8 @@ The boot refuses three unsafe combinations rather than starting:
 
 With no password set outside production, the loopback address is still trusted,
 so the CLI keeps working locally. **Setting a password turns that off**: the
-password is then required from every address, loopback included, which is what
-makes the guard testable and predictable.
+password is then required from every address, loopback included, so the guard
+stays testable and predictable.
 
 The password lives in 1Password and reaches the container through
 `.kamal/secrets`, exactly like `SHUFFLE_SECRET`.
