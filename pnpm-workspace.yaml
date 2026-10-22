@@ -1,2 +1,3 @@
+minimumReleaseAge: 14400
 minimumReleaseAgeExclude:
   - solid-objects@0.13.0 || 0.13.1 || 0.14.3
